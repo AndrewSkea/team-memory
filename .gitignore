@@ -11,3 +11,7 @@ mcp/team-memory-mcp.exe
 .idea/
 *.swp
 .DS_Store
+
+# Generated prompt copies (source of truth is prompts/)
+frontend/prompts/*.txt
+mcp/prompts/*.txt
