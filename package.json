@@ -1,0 +1,13 @@
+{
+  "name": "team-memory",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/frontend",
+    "copy-prompts": "bash scripts/copy-prompts.sh",
+    "serve": "python3 -m http.server 8080 --directory frontend"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.0.0"
+  }
+}

@@ -1,0 +1,13 @@
+# Node
+node_modules/
+*.log
+
+# Go
+mcp/team-memory-mcp
+mcp/team-memory-mcp.exe
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
