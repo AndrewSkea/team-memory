@@ -1,12 +1,18 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"os/exec"
 )
 
+type LLMRunner interface {
+	Run(ctx context.Context, prompt string) (string, error)
+}
+
 type Config struct {
-	ClaudePath string // override for tests; defaults to "claude" on PATH
+	ClaudePath string
+	Runner     LLMRunner // overrideable for tests
 }
 
 type Server struct {
