@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"abc"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"{\"target_file\":\"shared/programming-practices.md\",\"short_title\":\"Enforce semicolon linting\",\"one_sentence_summary\":\"Adopt semi rule.\",\"bullets\":[\"Add ESLint rule\"],\"tags\":\"eslint;style\",\"entry_header\":\"Entry: 2026-05-02T09:48:00Z — Enforce semicolon linting\",\"unsure\":false}"}]}}
+{"type":"result","subtype":"success","is_error":false}
