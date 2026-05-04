@@ -1,0 +1,9 @@
+package prompts
+
+import _ "embed"
+
+//go:embed categorize.txt
+var Categorize string
+
+//go:embed summarize.txt
+var Summarize string
