@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/AndrewSkea/team-memory/mcp/config"
 	"github.com/AndrewSkea/team-memory/mcp/prompts"
 )
 
@@ -14,6 +16,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/v1/categorize", s.handleCategorize)
 	s.mux.HandleFunc("/v1/summarize", s.handleSummarize)
+	s.mux.HandleFunc("/v1/export-config", s.handleExportConfig)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +69,7 @@ func (s *Server) handleCategorize(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprint(w, out)
+	_, _ = fmt.Fprint(w, stripFences(out))
 }
 
 type summarizeReq struct {
@@ -100,7 +103,23 @@ func (s *Server) handleSummarize(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprint(w, out)
+	_, _ = fmt.Fprint(w, stripFences(out))
+}
+
+// stripFences removes markdown code fences (```json ... ``` or ``` ... ```) that
+// some Claude versions add around JSON output.
+func stripFences(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "```") {
+		// drop first line (``` or ```json)
+		if i := strings.Index(s, "\n"); i >= 0 {
+			s = s[i+1:]
+		}
+		if j := strings.LastIndex(s, "```"); j >= 0 {
+			s = s[:j]
+		}
+	}
+	return strings.TrimSpace(s)
 }
 
 func writeErr(w http.ResponseWriter, code int, msg string) {
@@ -111,4 +130,25 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (s *Server) handleExportConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "POST only")
+		return
+	}
+	var cfg config.Config
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	path := s.cfg.ConfigPath
+	if path == "" {
+		path = config.DefaultPath()
+	}
+	if err := config.Write(path, cfg); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": path})
 }

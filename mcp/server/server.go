@@ -13,6 +13,7 @@ type LLMRunner interface {
 type Config struct {
 	ClaudePath string
 	Runner     LLMRunner // overrideable for tests
+	ConfigPath string    // path to config.json; empty = config.DefaultPath()
 }
 
 type Server struct {

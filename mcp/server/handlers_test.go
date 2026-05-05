@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -68,5 +70,28 @@ func TestCategorize_BadJSON(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestExportConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	srv := New(Config{ClaudePath: "/nonexistent/claude", ConfigPath: cfgPath})
+	body := `{"token":"tok","owner":"o","repo":"r","check_first":false}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/export-config", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["ok"] != true {
+		t.Fatalf("expected ok:true, got %v", resp)
+	}
+	if _, err := os.Stat(cfgPath); err != nil {
+		t.Fatal("config file not written")
 	}
 }
