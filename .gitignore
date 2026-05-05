@@ -1,3 +1,7 @@
+# Secrets
+.env
+.env.*
+
 # Node
 node_modules/
 *.log
