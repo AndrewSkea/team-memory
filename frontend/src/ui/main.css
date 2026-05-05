@@ -1,0 +1,27 @@
+:root {
+  --bg: #f5f1e8;
+  --card: #ffffff;
+  --text: #2d2a26;
+  --muted: #76706a;
+  --accent: #c84e1a;
+  --border: #e3ddd0;
+  --danger: #b3261e;
+  --radius: 12px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font: 16px/1.5 -apple-system, system-ui, "Segoe UI", sans-serif; }
+.app { max-width: 640px; margin: 24px auto; padding: 0 16px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.segmented { display: flex; gap: 4px; background: var(--border); padding: 4px; border-radius: var(--radius); margin-bottom: 16px; }
+.segmented button { flex: 1; background: transparent; border: 0; padding: 8px 12px; border-radius: 8px; cursor: pointer; color: var(--muted); }
+.segmented button.active { background: var(--card); color: var(--text); font-weight: 600; }
+label { display: block; margin: 12px 0 4px; font-size: 14px; color: var(--muted); }
+input, select, textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: #fff; color: var(--text); }
+textarea { min-height: 140px; resize: vertical; }
+button.primary { background: var(--accent); color: #fff; border: 0; padding: 10px 16px; border-radius: 8px; font: inherit; cursor: pointer; }
+button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: #fff; padding: 10px 16px; border-radius: 8px; }
+.toast.error { background: var(--danger); }
+.result { margin-top: 12px; padding: 12px; background: #faf7f0; border-radius: 8px; border: 1px solid var(--border); }
+.muted { color: var(--muted); font-size: 14px; }
+a { color: var(--accent); }
