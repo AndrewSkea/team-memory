@@ -1,38 +1,48 @@
 # team-memory
 
 Local-first memory app. All data lives in your own GitHub repo as Markdown.
-Slice 1 ships a static web UI plus an optional local Go MCP (`team-memory-mcp`)
-that wraps the `claude` CLI so you can use the app without an Anthropic API key.
+`team-memory-mcp` auto-saves a structured summary of every Claude Code session
+to your GitHub repo when the session ends.
 
-See `docs/superpowers/specs/2026-05-02-team-memory-slice-1-design.md` for the
-full design and `ROADMAP.md` for what's coming next.
+## Install
 
-## Prereqs
+**macOS / Linux:**
+```sh
+curl -LsSf https://raw.githubusercontent.com/AndrewSkea/team-memory/main/install.sh | sh
+```
 
-- Node 20+ (only for `npm test` and `python -m http.server`; no build step)
-- Go 1.22+ (only if you want the local MCP)
-- `claude` CLI on PATH (only if MCP needs to call the LLM with no API key)
-- A GitHub repo and a fine-grained PAT with `contents:write` on that repo
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/AndrewSkea/team-memory/main/install.ps1 | iex
+```
 
-## Quickstart (browser-only, with Anthropic key)
+The installer:
+- Downloads the pre-built binary and verifies its SHA256 checksum
+- Installs `team-memory-mcp` to `~/bin` and adds it to your PATH
+- Prompts for your GitHub PAT and memory repo, writes `~/.config/team-memory/config.json`
+- Wires `Stop` and `PreCompact` hooks into `~/.claude/settings.json`
+- Registers the MCP server in `~/.claude.json`
+
+You need a GitHub repo and a fine-grained PAT with `contents:write` on that repo.
+
+## Usage
+
+After install, just use Claude Code normally. When you end a session, `team-memory-mcp`
+automatically summarises it and commits a structured entry to your memory repo.
+
+## Web UI (optional)
+
+The web UI lets you browse, search, and manually add memories.
+
+**Prereqs:** Node 20+
 
 ```bash
 make prompts
 npm run serve
 # open http://localhost:8080
-# Setup page: paste PAT, owner/repo, Anthropic API key
 ```
 
-## Quickstart (browser + local MCP, no Anthropic key)
-
-```bash
-make prompts
-make mcp
-./mcp/team-memory-mcp &
-npm run serve
-# open http://localhost:8080
-# Setup page: paste PAT, owner/repo; leave Anthropic key blank
-```
+Setup page: paste PAT, owner/repo, and optionally an Anthropic API key.
 
 ## Tests
 
@@ -42,34 +52,30 @@ make test           # runs frontend + MCP tests
 
 ## Smoke checklist
 
-1. Setup page accepts PAT + repo, shows "Authenticated as <login>".
+1. Setup page accepts PAT + repo, shows "Authenticated as \<login\>".
 2. If repo was empty, INDEX.md / GENERAL.md / UNSURE.md appear in GitHub.
 3. Remember page → type "test memory" → Save → entry appears in GENERAL.md
    on GitHub with the right `### Entry:` block.
-4. Auto-categorize button (with Anthropic key OR MCP running) returns a
-   target file and summary; saving commits to that file and updates INDEX.md.
+4. Auto-categorize button returns a target file and summary; saving commits to
+   that file and updates INDEX.md.
 5. Lookup page finds the new entry by keyword.
 6. Pulling the repo from GitHub directly while save is in flight should
    produce a "file changed in GitHub" error after 3 retries (manual test).
 
 ## Privacy
 
-- PAT and Anthropic key are stored in your browser's `localStorage`. Treat the
-  browser profile as the trust boundary. (Web Crypto encryption is on the
-  ROADMAP.)
+- PAT and Anthropic key are stored in your browser's `localStorage` (web UI) and
+  `~/.config/team-memory/config.json` (CLI). No telemetry, no third-party scripts.
 - The MCP binds `127.0.0.1` only.
-- No telemetry, no third-party scripts.
 
-## Claude Code Hook Setup
+## Contributing
 
-After completing Setup in the web UI:
+Prereqs: Go 1.22+, Node 20+.
 
-1. **Build, install the binary, and wire hooks:**
-   ```bash
-   make install
-   ```
-   This installs `team-memory-mcp` to `~/bin` and automatically adds `Stop` and `PreCompact` hooks to `~/.claude/settings.json`. Ensure `~/bin` is on your `PATH`.
+```bash
+make build          # build binary locally
+make install        # build + copy to ~/bin (then run sh install.sh for hooks/MCP)
+make test           # run all tests
+```
 
-2. **Export CLI config** from the Setup page — click "Export to CLI config" after verifying your token.
-
-3. End any Claude Code session — it will auto-save a structured summary to your GitHub repo.
+To cut a release, push a `v*` tag — GitHub Actions builds and publishes automatically.
