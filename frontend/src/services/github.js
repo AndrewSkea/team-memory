@@ -14,7 +14,7 @@ export class GitHubClient {
     this.token = token;
     this.owner = owner;
     this.repo = repo;
-    this.fetch = f;
+    this.fetch = (...args) => f(...args);
   }
 
   async _req(path, opts = {}) {

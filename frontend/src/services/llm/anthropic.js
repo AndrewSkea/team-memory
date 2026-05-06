@@ -5,7 +5,7 @@ export class AnthropicDirect {
   constructor({ apiKey, loadPrompt, fetch: f = globalThis.fetch }) {
     this.apiKey = apiKey;
     this.loadPrompt = loadPrompt;
-    this.fetch = f;
+    this.fetch = (...args) => f(...args);
   }
 
   async _call(systemPrompt, userContent) {

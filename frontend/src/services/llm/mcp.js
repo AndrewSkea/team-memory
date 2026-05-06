@@ -2,7 +2,7 @@ export class LocalMCP {
   constructor({ url = "http://127.0.0.1:7438", loadPrompt, fetch: f = globalThis.fetch }) {
     this.url = url;
     this.loadPrompt = loadPrompt;
-    this.fetch = f;
+    this.fetch = (...args) => f(...args);
   }
 
   async healthy() {
