@@ -59,3 +59,37 @@ make test           # runs frontend + MCP tests
   ROADMAP.)
 - The MCP binds `127.0.0.1` only.
 - No telemetry, no third-party scripts.
+
+## Claude Code Hook Setup
+
+After completing Setup in the web UI:
+
+1. **Build and install the binary:**
+   ```bash
+   make install
+   ```
+   Ensure `~/bin` is on your `PATH`.
+
+2. **Export CLI config** from the Setup page — click "Export to CLI config" after verifying your token.
+
+3. **Add hooks** to `~/.claude/settings.json`:
+   ```json
+   {
+     "hooks": {
+       "Stop": [
+         {
+           "matcher": "",
+           "hooks": [{"type": "command", "command": "team-memory-mcp --once session-end"}]
+         }
+       ],
+       "PreCompact": [
+         {
+           "matcher": "",
+           "hooks": [{"type": "command", "command": "team-memory-mcp --once precompact"}]
+         }
+       ]
+     }
+   }
+   ```
+
+4. End any Claude Code session — it will auto-save a structured summary to your GitHub repo.
