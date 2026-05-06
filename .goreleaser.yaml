@@ -1,0 +1,45 @@
+version: 2
+
+before:
+  hooks:
+    - bash scripts/copy-prompts.sh
+
+builds:
+  - id: team-memory-mcp
+    dir: mcp
+    binary: team-memory-mcp
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: default
+    name_template: "team-memory-mcp_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - none*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  github:
+    owner: AndrewSkea
+    name: team-memory
+  draft: false
+  prerelease: auto
