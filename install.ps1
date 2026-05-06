@@ -82,9 +82,6 @@ if ($PAT -and $Slug) {
     $ConfigFile = "$env:APPDATA\team-memory\config.json"
 }
 
-# ── detect python executable ─────────────────────────────────────────────────
-$Python = if (Get-Command python3 -ErrorAction SilentlyContinue) { 'python3' } else { 'python' }
-
 # ── wire Claude Code hooks ────────────────────────────────────────────────────
 $SettingsPath = "$env:USERPROFILE\.claude\settings.json"
 $SettingsDir  = Split-Path $SettingsPath
@@ -118,7 +115,7 @@ for event, entries in new_hooks.items():
 with open(path, 'w', encoding='utf-8') as f:
     json.dump(settings, f, indent=2)
 '@
-$HooksPy | & $Python - $SettingsPath
+$HooksPy | python - $SettingsPath
 
 # ── register MCP server in ~/.claude.json ────────────────────────────────────
 $ClaudeJson = "$env:USERPROFILE\.claude.json"
@@ -141,7 +138,7 @@ with open(path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
 print('  MCP server registered')
 '@
-$McpPy | & $Python - $ClaudeJson
+$McpPy | python - $ClaudeJson
 
 # ── summary ───────────────────────────────────────────────────────────────────
 Write-Host ""
