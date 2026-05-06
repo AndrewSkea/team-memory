@@ -1,6 +1,7 @@
 import { renderSetup } from "./pages/setup.js";
 import { renderRemember } from "./pages/remember.js";
 import { renderLookup } from "./pages/lookup.js";
+import { renderStats } from "./pages/stats.js";
 
 const CONFIG_KEY = "team-memory:config";
 
@@ -35,6 +36,10 @@ function go(page) {
     });
   } else if (page === "remember") {
     renderRemember(root, { config, toast });
+  } else if (page === "lookup") {
+    renderLookup(root, { config, toast });
+  } else if (page === "stats") {
+    renderStats(root, { config, toast });
   } else {
     renderLookup(root, { config, toast });
   }

@@ -1,6 +1,7 @@
 import { GitHubClient } from "../services/github.js";
 import { Cache } from "../services/cache.js";
 import { parseIndex } from "../services/indexmd.js";
+import { incrementLookups } from "../services/stats.js";
 
 export function renderLookup(root, { config, toast }) {
   const gh = new GitHubClient({ token: config.token, owner: config.owner, repo: config.repo });
@@ -25,6 +26,7 @@ export function renderLookup(root, { config, toast }) {
 async function doSearch(query, out, gh, cache, config, toast) {
   query = query.trim().toLowerCase();
   if (!query) { out.innerHTML = ""; return; }
+  incrementLookups();
   try {
     let idxFile = await cache.get("file:INDEX.md");
     if (!idxFile) {
