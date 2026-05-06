@@ -21,7 +21,6 @@ The installer:
 - Installs `team-memory-mcp` to `~/bin` and adds it to your PATH
 - Prompts for your GitHub PAT and memory repo, writes `~/.config/team-memory/config.json`
 - Wires `Stop` and `PreCompact` hooks into `~/.claude/settings.json`
-- Registers the MCP server in `~/.claude.json`
 
 You need a GitHub repo and a fine-grained PAT with `contents:write` on that repo.
 
@@ -74,7 +73,7 @@ Prereqs: Go 1.22+, Node 20+.
 
 ```bash
 make build          # build binary locally
-make install        # build + copy to ~/bin (then run sh install.sh for hooks/MCP)
+make install        # build + copy to ~/bin (then run sh install.sh for hooks)
 make test           # run all tests
 ```
 
