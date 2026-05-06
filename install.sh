@@ -139,16 +139,17 @@ PYEOF
 CLAUDE_JSON="$HOME/.claude.json"
 [ -f "$CLAUDE_JSON" ] || printf '{}' > "$CLAUDE_JSON"
 
-python3 - "$CLAUDE_JSON" <<'PYEOF'
+python3 - "$CLAUDE_JSON" "$BIN_DIR/$BINARY" <<'PYEOF'
 import sys, json
 
 path = sys.argv[1]
+binary_path = sys.argv[2]
 with open(path) as f:
     data = json.load(f)
 
 data.setdefault('mcpServers', {})
 data['mcpServers']['team-memory'] = {
-    'command': 'team-memory-mcp',
+    'command': binary_path,
     'env': {'MEMORY_API_URL': 'http://localhost:8000'}
 }
 

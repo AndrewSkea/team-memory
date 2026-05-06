@@ -125,12 +125,13 @@ $McpPy = @'
 import sys, json
 
 path = sys.argv[1]
+binary_path = sys.argv[2]
 with open(path, encoding='utf-8') as f:
     data = json.load(f)
 
 data.setdefault('mcpServers', {})
 data['mcpServers']['team-memory'] = {
-    'command': 'team-memory-mcp',
+    'command': binary_path,
     'env': {'MEMORY_API_URL': 'http://localhost:8000'}
 }
 
@@ -138,7 +139,7 @@ with open(path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
 print('  MCP server registered')
 '@
-$McpPy | python - $ClaudeJson
+$McpPy | python - $ClaudeJson "$BinDir\$Binary.exe"
 
 # ── summary ───────────────────────────────────────────────────────────────────
 Write-Host ""
