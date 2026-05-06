@@ -149,7 +149,7 @@ with open(path) as f:
 
 data.setdefault('mcpServers', {})
 if 'team-memory' not in data['mcpServers']:
-    data['mcpServers']['team-memory'] = {'command': binary_path}
+    data['mcpServers']['team-memory'] = {'command': binary_path, 'args': ['--mcp']}
     print('  MCP server registered')
 else:
     print('  MCP server already registered')

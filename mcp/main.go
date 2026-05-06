@@ -18,6 +18,7 @@ import (
 
 func main() {
 	once := flag.String("once", "", "run one-shot command (session-end|precompact) and exit")
+	mcp  := flag.Bool("mcp", false, "run as MCP stdio server (used by Claude Code)")
 	port := flag.String("port", "7438", "loopback port")
 	flag.Parse()
 
@@ -32,6 +33,20 @@ func main() {
 	runner := llm.NewClaude("")
 	srv := server.New(server.Config{Runner: runner})
 	addr := "127.0.0.1:" + *port
+
+	if *mcp {
+		// MCP mode: serve HTTP in background, handle MCP stdio on main goroutine
+		go func() {
+			if err := http.ListenAndServe(addr, server.WithCORS(srv.Handler())); err != nil {
+				log.Printf("HTTP: %v", err)
+			}
+		}()
+		if err := runMCPStdio(); err != nil {
+			log.Fatalf("MCP stdio: %v", err)
+		}
+		return
+	}
+
 	log.Printf("team-memory-mcp listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, server.WithCORS(srv.Handler())))
 }

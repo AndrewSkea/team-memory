@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -36,6 +37,7 @@ func Read(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF}) // strip UTF-8 BOM (Windows PowerShell writes it)
 	var cfg Config
 	return cfg, json.Unmarshal(data, &cfg)
 }

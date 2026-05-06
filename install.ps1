@@ -73,8 +73,8 @@ if ($PAT -and $Slug) {
     $ConfigDir = "$env:APPDATA\team-memory"
     $ConfigFile= "$ConfigDir\config.json"
     if (-not (Test-Path $ConfigDir)) { New-Item -ItemType Directory -Path $ConfigDir | Out-Null }
-    @{token=$PAT; owner=$Owner; repo=$Repo; check_first=$false} |
-        ConvertTo-Json | Set-Content $ConfigFile -Encoding UTF8
+    $ConfigJson = @{token=$PAT; owner=$Owner; repo=$Repo; check_first=$false} | ConvertTo-Json
+    [System.IO.File]::WriteAllText($ConfigFile, $ConfigJson, (New-Object System.Text.UTF8Encoding $false))
     Write-Host "Config written to $ConfigFile"
 } else {
     Write-Host "Warning: PAT or repo blank — skipping config."
@@ -131,7 +131,7 @@ with open(path, encoding='utf-8') as f:
 
 data.setdefault('mcpServers', {})
 if 'team-memory' not in data['mcpServers']:
-    data['mcpServers']['team-memory'] = {'command': binary_path}
+    data['mcpServers']['team-memory'] = {'command': binary_path, 'args': ['--mcp']}
     print('  MCP server registered')
 else:
     print('  MCP server already registered')
