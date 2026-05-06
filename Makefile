@@ -17,9 +17,9 @@ mcp: build
 install: build
 	mkdir -p ~/bin
 	cp mcp/team-memory-mcp$(EXT) ~/bin/
-	bash scripts/install-hooks.sh
 	@echo "Installed to ~/bin/team-memory-mcp$(EXT)"
 	@echo "Make sure ~/bin is on your PATH"
+	@echo "To wire hooks and MCP, run: sh install.sh"
 
 test-mcp:
 	cd mcp && go test ./...
