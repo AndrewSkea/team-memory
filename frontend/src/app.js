@@ -50,4 +50,11 @@ nav.addEventListener("click", e => {
   if (b) go(b.dataset.page);
 });
 
+document.getElementById("forget-auth").addEventListener("click", () => {
+  if (confirm("Clear saved credentials? You will need to re-enter them.")) {
+    localStorage.removeItem(CONFIG_KEY);
+    go("remember");
+  }
+});
+
 go("remember");
