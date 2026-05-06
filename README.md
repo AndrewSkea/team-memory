@@ -21,6 +21,7 @@ The installer:
 - Installs `team-memory-mcp` to `~/bin` and adds it to your PATH
 - Prompts for your GitHub PAT and memory repo, writes `~/.config/team-memory/config.json`
 - Wires `Stop` and `PreCompact` hooks into `~/.claude/settings.json`
+- Registers the server in `~/.claude.json` so Claude Code auto-starts it
 
 You need a GitHub repo and a fine-grained PAT with `contents:write` on that repo.
 

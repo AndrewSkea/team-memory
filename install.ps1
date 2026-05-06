@@ -117,6 +117,30 @@ with open(path, 'w', encoding='utf-8') as f:
 '@
 $HooksPy | python - $SettingsPath
 
+# ── register MCP server in ~/.claude.json ────────────────────────────────────
+$ClaudeJson = "$env:USERPROFILE\.claude.json"
+if (-not (Test-Path $ClaudeJson)) { '{}' | Set-Content $ClaudeJson -Encoding UTF8 }
+
+$McpPy = @'
+import sys, json
+
+path = sys.argv[1]
+binary_path = sys.argv[2]
+with open(path, encoding='utf-8') as f:
+    data = json.load(f)
+
+data.setdefault('mcpServers', {})
+if 'team-memory' not in data['mcpServers']:
+    data['mcpServers']['team-memory'] = {'command': binary_path}
+    print('  MCP server registered')
+else:
+    print('  MCP server already registered')
+
+with open(path, 'w', encoding='utf-8') as f:
+    json.dump(data, f, indent=2)
+'@
+$McpPy | python - $ClaudeJson "$BinDir\$Binary.exe"
+
 # ── summary ───────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "✓ team-memory-mcp installed"

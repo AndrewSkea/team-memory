@@ -135,6 +135,29 @@ with open(path, 'w') as f:
     json.dump(settings, f, indent=2)
 PYEOF
 
+# ── register MCP server in ~/.claude.json ────────────────────────────────────
+CLAUDE_JSON="$HOME/.claude.json"
+[ -f "$CLAUDE_JSON" ] || printf '{}' > "$CLAUDE_JSON"
+
+python3 - "$CLAUDE_JSON" "$BIN_DIR/$BINARY" <<'PYEOF'
+import sys, json
+
+path = sys.argv[1]
+binary_path = sys.argv[2]
+with open(path) as f:
+    data = json.load(f)
+
+data.setdefault('mcpServers', {})
+if 'team-memory' not in data['mcpServers']:
+    data['mcpServers']['team-memory'] = {'command': binary_path}
+    print('  MCP server registered')
+else:
+    print('  MCP server already registered')
+
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+PYEOF
+
 # ── summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "✓ team-memory-mcp installed"
@@ -142,6 +165,7 @@ echo ""
 echo "  Binary:  $BIN_DIR/$BINARY"
 echo "  Config:  ${XDG_CONFIG_HOME:-$HOME/.config}/team-memory/config.json"
 echo "  Hooks:   $HOME/.claude/settings.json  (Stop, PreCompact)"
+echo "  MCP:     $HOME/.claude.json           (auto-starts server)"
 echo ""
 echo "  Restart your terminal for PATH changes to take effect."
 if [ -n "$SLUG" ]; then
