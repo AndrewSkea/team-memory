@@ -56,30 +56,45 @@ if ($UserPath -notlike "*$BinDir*") {
     Write-Host "$BinDir already in PATH"
 }
 
+# ── read existing config (if any) ────────────────────────────────────────────
+$ConfigDir  = "$env:APPDATA\team-memory"
+$ConfigFile = "$ConfigDir\config.json"
+$ExistingPAT  = ""
+$ExistingSlug = ""
+if (Test-Path $ConfigFile) {
+    try {
+        $raw = (Get-Content $ConfigFile -Raw -Encoding UTF8).TrimStart([char]0xFEFF)
+        $j   = $raw | ConvertFrom-Json
+        $ExistingPAT = $j.token
+        if ($j.owner -and $j.repo) { $ExistingSlug = "$($j.owner)/$($j.repo)" }
+    } catch {}
+}
+
 # ── prompt for config ─────────────────────────────────────────────────────────
 Write-Host ""
-$PatSecure = Read-Host "GitHub PAT (fine-grained, contents:write on your memory repo)" -AsSecureString
+$PatPrompt = if ($ExistingPAT) { "GitHub PAT [keep existing]" } else { "GitHub PAT (fine-grained, contents:write on your memory repo)" }
+$PatSecure = Read-Host $PatPrompt -AsSecureString
 $BSTR      = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($PatSecure)
 $PAT       = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($BSTR)
 [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
+if (-not $PAT) { $PAT = $ExistingPAT }
 
-$Slug = Read-Host "Repo (owner/name, e.g. alice/my-memory)"
+$SlugPrompt = if ($ExistingSlug) { "Repo (owner/name) [$ExistingSlug]" } else { "Repo (owner/name, e.g. alice/my-memory)" }
+$Slug = Read-Host $SlugPrompt
+if (-not $Slug) { $Slug = $ExistingSlug }
 
 # ── write config ──────────────────────────────────────────────────────────────
 if ($PAT -and $Slug) {
-    $Parts     = $Slug -split '/', 2
-    $Owner     = $Parts[0]
-    $Repo      = $Parts[1]
-    $ConfigDir = "$env:APPDATA\team-memory"
-    $ConfigFile= "$ConfigDir\config.json"
+    $Parts  = $Slug -split '/', 2
+    $Owner  = $Parts[0]
+    $Repo   = $Parts[1]
     if (-not (Test-Path $ConfigDir)) { New-Item -ItemType Directory -Path $ConfigDir | Out-Null }
     $ConfigJson = @{token=$PAT; owner=$Owner; repo=$Repo; check_first=$false} | ConvertTo-Json
     [System.IO.File]::WriteAllText($ConfigFile, $ConfigJson, (New-Object System.Text.UTF8Encoding $false))
     Write-Host "Config written to $ConfigFile"
 } else {
     Write-Host "Warning: PAT or repo blank — skipping config."
-    Write-Host "  Write $env:APPDATA\team-memory\config.json manually or re-run install.ps1."
-    $ConfigFile = "$env:APPDATA\team-memory\config.json"
+    Write-Host "  Write $ConfigFile manually or re-run install.ps1."
 }
 
 # ── wire Claude Code hooks ────────────────────────────────────────────────────

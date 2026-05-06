@@ -74,23 +74,46 @@ case "$SHELL_NAME" in
   *)    add_to_path "$HOME/.profile" ;;
 esac
 
+# ── read existing config (if any) ────────────────────────────────────────────
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/team-memory"
+CONFIG_FILE="$CONFIG_DIR/config.json"
+
+EXISTING_PAT=""
+EXISTING_SLUG=""
+if [ -f "$CONFIG_FILE" ]; then
+  EXISTING_PAT=$(python3 -c "import json,sys; d=json.load(open('$CONFIG_FILE')); print(d.get('token',''))" 2>/dev/null || true)
+  EXISTING_OWNER=$(python3 -c "import json,sys; d=json.load(open('$CONFIG_FILE')); print(d.get('owner',''))" 2>/dev/null || true)
+  EXISTING_REPO=$(python3 -c "import json,sys; d=json.load(open('$CONFIG_FILE')); print(d.get('repo',''))" 2>/dev/null || true)
+  if [ -n "$EXISTING_OWNER" ] && [ -n "$EXISTING_REPO" ]; then
+    EXISTING_SLUG="$EXISTING_OWNER/$EXISTING_REPO"
+  fi
+fi
+
 # ── prompt for config (use /dev/tty so this works when piped through sh) ─────
 echo ""
-printf "GitHub PAT (fine-grained, contents:write on your memory repo): " >/dev/tty
+if [ -n "$EXISTING_PAT" ]; then
+  printf "GitHub PAT [keep existing]: " >/dev/tty
+else
+  printf "GitHub PAT (fine-grained, contents:write on your memory repo): " >/dev/tty
+fi
 stty -echo </dev/tty 2>/dev/null || true
 read -r PAT </dev/tty || PAT=""
 stty echo </dev/tty 2>/dev/null || true
 echo "" >/dev/tty
+[ -z "$PAT" ] && PAT="$EXISTING_PAT"
 
-printf "Repo (owner/name, e.g. alice/my-memory): " >/dev/tty
+if [ -n "$EXISTING_SLUG" ]; then
+  printf "Repo (owner/name) [${EXISTING_SLUG}]: " >/dev/tty
+else
+  printf "Repo (owner/name, e.g. alice/my-memory): " >/dev/tty
+fi
 read -r SLUG </dev/tty || SLUG=""
+[ -z "$SLUG" ] && SLUG="$EXISTING_SLUG"
 
 # ── write config ─────────────────────────────────────────────────────────────
 if [ -n "$PAT" ] && [ -n "$SLUG" ]; then
   OWNER=$(printf '%s' "$SLUG" | cut -d/ -f1)
   REPO=$(printf '%s' "$SLUG" | cut -d/ -f2)
-  CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/team-memory"
-  CONFIG_FILE="$CONFIG_DIR/config.json"
   mkdir -p "$CONFIG_DIR"
   printf '{\n  "token": "%s",\n  "owner": "%s",\n  "repo": "%s",\n  "check_first": false\n}\n' \
     "$PAT" "$OWNER" "$REPO" > "$CONFIG_FILE"
@@ -98,8 +121,7 @@ if [ -n "$PAT" ] && [ -n "$SLUG" ]; then
   echo "Config written to $CONFIG_FILE"
 else
   echo "Warning: PAT or repo blank — skipping config."
-  echo "  Run install.sh again, or write ${XDG_CONFIG_HOME:-$HOME/.config}/team-memory/config.json manually."
-  CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/team-memory/config.json"
+  echo "  Run install.sh again, or write $CONFIG_FILE manually."
 fi
 
 # ── wire Claude Code hooks ───────────────────────────────────────────────────
