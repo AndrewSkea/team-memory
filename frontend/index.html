@@ -3,21 +3,39 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>team-memory</title>
+  <title>Team Memory</title>
   <link rel="stylesheet" href="./src/ui/main.css" />
 </head>
 <body>
   <div class="app">
-    <h1>team-memory</h1>
-    <div class="segmented" id="nav">
-      <button data-page="remember">Remember</button>
-      <button data-page="lookup">Lookup</button>
-      <button data-page="stats">Stats</button>
+    <div class="header">
+      <div class="header-icon">✳</div>
+      <h1>Team Memory</h1>
+      <p class="subtitle">Record what your team learns</p>
     </div>
-    <div style="text-align:right;margin-bottom:12px;">
-      <button id="forget-auth" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;padding:0;">Forget auth</button>
-    </div>
+
+    <nav class="nav-card" id="nav">
+      <button class="nav-btn" data-page="remember">
+        <svg viewBox="0 0 16 16"><path d="M3 2h10v12l-5-3-5 3V2z"/></svg>
+        Remember
+      </button>
+      <button class="nav-btn" data-page="lookup">
+        <svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>
+        Lookup
+      </button>
+      <button class="nav-btn" data-page="stats">
+        <svg viewBox="0 0 16 16"><rect x="1" y="9" width="3" height="6" rx="1"/><rect x="6.5" y="5" width="3" height="10" rx="1"/><rect x="12" y="2" width="3" height="13" rx="1"/></svg>
+        Stats
+      </button>
+      <button class="nav-btn" data-page="stale">
+        <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><polyline points="8 4.5 8 8 10.5 10"/></svg>
+        Stale
+      </button>
+    </nav>
+
     <div id="root"></div>
+
+    <footer class="footer" id="footer"></footer>
   </div>
   <script type="module" src="./src/app.js"></script>
 </body>
