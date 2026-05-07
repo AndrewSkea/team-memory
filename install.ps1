@@ -40,6 +40,9 @@ try {
     # ── install binary ────────────────────────────────────────────────────────
     if (-not (Test-Path $BinDir)) { New-Item -ItemType Directory -Path $BinDir | Out-Null }
     Expand-Archive "$TmpDir\$Archive" -DestinationPath $TmpDir -Force
+    # Kill running instance before overwriting the locked binary
+    Get-Process -Name $Binary -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
     Copy-Item "$TmpDir\$Binary.exe" "$BinDir\$Binary.exe" -Force
     Write-Host "Installed to $BinDir\$Binary.exe"
 
@@ -190,6 +193,7 @@ if ($RunChoice -eq "1") {
     $ExePath = "$BinDir\$Binary.exe"
     $HostsOk = $false
 
+
     if ($IsAdmin) {
         # ── admin path: Task Scheduler (RunLevel Highest) + hosts + port 80 ──
         $HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
@@ -218,7 +222,7 @@ if ($RunChoice -eq "1") {
         $Settings  = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit 0 -MultipleInstances IgnoreNew
         $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest
         Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Principal $Principal -Force | Out-Null
-        try { Start-ScheduledTask -TaskName $TaskName; Write-Host "  Task '$TaskName' registered and started" }
+        try { Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop; Write-Host "  Task '$TaskName' registered and started" }
         catch { Write-Host "  Task '$TaskName' registered (starts at next logon)" }
 
         $WebUrl = if ($Port80Ok) { "http://team-mem/" } else { "http://team-mem:7438/" }
