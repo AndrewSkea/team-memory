@@ -153,14 +153,19 @@ $ClaudeJson = "$env:USERPROFILE\.claude.json"
 if (-not (Test-Path $ClaudeJson)) { [System.IO.File]::WriteAllText($ClaudeJson, '{}', (New-Object System.Text.UTF8Encoding $false)) }
 
 # Service mode: Claude Code starts on port 7439 to avoid conflict with service on 7438
-$McpArgs = if ($RunChoice -eq "1") { '["--mcp","--port","7439"]' } else { '["--mcp"]' }
+# Pass args as individual positional params (PS 5.1 strips quotes from JSON strings)
+if ($RunChoice -eq "1") {
+    $McpArgList = @("--mcp", "--port", "7439")
+} else {
+    $McpArgList = @("--mcp")
+}
 
 $McpPy = @'
 import sys, json
 
 path = sys.argv[1]
 binary_path = sys.argv[2]
-args = json.loads(sys.argv[3])
+args = sys.argv[3:]
 with open(path, encoding='utf-8') as f:
     data = json.load(f)
 
@@ -175,7 +180,7 @@ else:
 with open(path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
 '@
-$McpPy | python - $ClaudeJson "$BinDir\$Binary.exe" $McpArgs
+$McpPy | python - $ClaudeJson "$BinDir\$Binary.exe" @McpArgList
 
 # ── service setup ─────────────────────────────────────────────────────────────
 $Port = 7438
