@@ -4,10 +4,14 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/frontend",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:all": "npm test && npm run test:e2e",
     "copy-prompts": "bash scripts/copy-prompts.sh",
     "serve": "python -m http.server 8080 --directory frontend"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "fake-indexeddb": "^6.0.0"
   }
 }
