@@ -4,17 +4,6 @@
 
 Only the latest release is actively maintained.
 
-## Reporting a vulnerability
-
-Please **do not** open a public GitHub issue for security vulnerabilities.
-
-Email **andrewskea.as@gmail.com** with:
-- A description of the vulnerability
-- Steps to reproduce
-- Potential impact
-
-You will receive a response within 72 hours. If confirmed, a fix will be released as soon as possible and you will be credited unless you prefer otherwise.
-
 ## Threat model
 
 team-memory is a local-first tool. Understanding its trust boundaries:
