@@ -3,6 +3,13 @@ import { renderRemember } from "./pages/remember.js";
 import { renderLookup } from "./pages/lookup.js";
 import { renderStats } from "./pages/stats.js";
 import { renderStale } from "./pages/stale.js";
+import { renderMeetings } from './pages/meetings.js';
+import { renderStandup } from './pages/standup.js';
+import { renderProjects } from './pages/projects.js';
+import { renderDecisions } from './pages/decisions.js';
+import { renderActions } from './pages/actions.js';
+import { renderTopics } from './pages/topics.js';
+import { renderTimeline } from './pages/timeline.js';
 
 const CONFIG_KEY = "team-memory:config";
 
@@ -61,6 +68,20 @@ export function go(page) {
     renderStats(root, { config, toast });
   } else if (page === "stale") {
     renderStale(root, { config, toast });
+  } else if (page === "meetings") {
+    renderMeetings(root, config);
+  } else if (page === "standup") {
+    renderStandup(root, config);
+  } else if (page === "projects") {
+    renderProjects(root, config);
+  } else if (page === "decisions") {
+    renderDecisions(root, config);
+  } else if (page === "actions") {
+    renderActions(root, config);
+  } else if (page === "topics") {
+    renderTopics(root, config);
+  } else if (page === "timeline") {
+    renderTimeline(root, config);
   } else {
     renderLookup(root, { config, toast });
   }

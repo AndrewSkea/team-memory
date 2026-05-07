@@ -75,11 +75,16 @@ html, body {
   border-radius: var(--radius);
   padding: 0 6px;
   display: flex;
+  overflow-x: auto;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
   box-shadow: 0 2px 12px rgba(45,42,38,0.08), 0 1px 3px rgba(45,42,38,0.04);
 }
+.nav-card::-webkit-scrollbar { display: none; }
 
 .nav-btn {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
