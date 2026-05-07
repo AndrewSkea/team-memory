@@ -43,6 +43,8 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
         Not sure — park this in UNSURE.md for later
       </label>
 
+      <div class="divider"></div>
+
       <div class="button-row">
         <button class="btn-primary" id="save">
           <svg viewBox="0 0 16 16"><path d="M14 2H9l-7 7 5 5 7-7V2z"/><circle cx="12" cy="4" r="1.2" fill="currentColor" stroke="none"/></svg>
