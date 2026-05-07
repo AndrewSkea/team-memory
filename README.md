@@ -16,14 +16,28 @@ curl -LsSf https://raw.githubusercontent.com/AndrewSkea/team-memory/main/install
 irm https://raw.githubusercontent.com/AndrewSkea/team-memory/main/install.ps1 | iex
 ```
 
-The installer:
-- Downloads the pre-built binary and verifies its SHA256 checksum
-- Installs `team-memory-mcp` to `~/bin` and adds it to your PATH
-- Prompts for your GitHub PAT and memory repo, writes `~/.config/team-memory/config.json`
-- Wires `Stop` and `PreCompact` hooks into `~/.claude/settings.json`
-- Registers the server in `~/.claude.json` so Claude Code auto-starts it
+The installer downloads and verifies the binary, adds it to `~/bin`, prompts for your
+GitHub PAT and memory repo, wires `Stop`/`PreCompact` hooks into `~/.claude/settings.json`,
+and registers the MCP server in `~/.claude.json`.
 
 You need a GitHub repo and a fine-grained PAT with `contents:write` on that repo.
+
+### Service mode (always-on web UI)
+
+The installer offers two run modes. Service mode keeps the web UI available at all times:
+
+| | Non-admin (default) | Admin (`Run as Administrator`) |
+|---|---|---|
+| Autostart | Registry `HKCU\...\Run` key | Task Scheduler (`RunLevel Highest`) |
+| Port | 7438 | 80 (via `netsh urlacl`) |
+| Browser URL | `http://127.0.0.1:7438/` | `http://team-mem/` |
+| `team-mem` hostname | Manual (see below) | Auto-added to hosts file |
+
+To get the `http://team-mem/` shortcut without re-running as admin, add one line to
+`C:\Windows\System32\drivers\etc\hosts` (requires admin once):
+```
+127.0.0.1 team-mem
+```
 
 ## Usage
 

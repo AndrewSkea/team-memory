@@ -97,11 +97,19 @@ if ($PAT -and $Slug) {
     Write-Host "  Write $ConfigFile manually or re-run install.ps1."
 }
 
+# ── detect elevation ─────────────────────────────────────────────────────────
+$IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
 # ── choose run mode ───────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "How should team-memory-mcp run?"
-Write-Host "  1) System service  — always available; open http://127.0.0.1:7438/ in browser"
-Write-Host "  2) With Claude Code — auto-starts when Claude Code runs (lighter weight)"
+Write-Host "  1) Always-on service — starts at login, browser at http://127.0.0.1:7438/"
+if ($IsAdmin) {
+    Write-Host "     (running as admin: also sets up http://team-mem/ shortcut)"
+} else {
+    Write-Host "     (not admin: uses registry Run key; re-run as admin for http://team-mem/ shortcut)"
+}
+Write-Host "  2) With Claude Code  — auto-starts when Claude Code runs (lighter weight)"
 $RunChoice = Read-Host "Choice [1/2, default 2]"
 if (-not $RunChoice) { $RunChoice = "2" }
 
@@ -174,53 +182,61 @@ $Port = 7438
 $WebUrl = "http://127.0.0.1:$Port/"
 
 if ($RunChoice -eq "1") {
-    # ── try hosts entry (graceful — needs admin, not fatal if missing) ────────
-    $HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
-    $HostsOk   = $false
-    try {
+    $ExePath = "$BinDir\$Binary.exe"
+    $HostsOk = $false
+
+    if ($IsAdmin) {
+        # ── admin path: Task Scheduler (RunLevel Highest) + hosts + port 80 ──
+        $HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
         $HostsContent = Get-Content $HostsFile -Raw -ErrorAction SilentlyContinue
         if ($HostsContent -notlike "*team-mem*") {
-            Add-Content -Path $HostsFile -Value "`r`n127.0.0.1 team-mem" -ErrorAction Stop
+            Add-Content -Path $HostsFile -Value "`r`n127.0.0.1 team-mem" -ErrorAction SilentlyContinue
             Write-Host "  Added team-mem to hosts file"
-            $HostsOk = $true
         } else {
             Write-Host "  team-mem already in hosts file"
-            $HostsOk = $true
         }
-    } catch {
-        Write-Host "  Hosts file needs admin — skipping"
-        Write-Host "  To add later: add '127.0.0.1 team-mem' to $HostsFile"
+        $HostsOk = ($HostsContent -like "*team-mem*") -or $true
+
+        $Port80Ok = $false
+        try {
+            $null = & netsh http add urlacl url="http://team-mem:80/" user="$env:USERNAME" 2>&1
+            $Port80Ok = $true
+            Write-Host "  Port 80 granted — browser URL: http://team-mem/"
+        } catch {
+            Write-Host "  netsh failed — browser URL: http://team-mem:7438/"
+        }
+
+        $TaskName  = "TeamMemoryMCP"
+        $PortArg   = if ($Port80Ok) { "--port 80" } else { "--port 7438" }
+        $Action    = New-ScheduledTaskAction -Execute $ExePath -Argument $PortArg
+        $Trigger   = New-ScheduledTaskTrigger -AtLogOn
+        $Settings  = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit 0 -MultipleInstances IgnoreNew
+        $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest
+        Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Principal $Principal -Force | Out-Null
+        try { Start-ScheduledTask -TaskName $TaskName; Write-Host "  Task '$TaskName' registered and started" }
+        catch { Write-Host "  Task '$TaskName' registered (starts at next logon)" }
+
+        $WebUrl = if ($Port80Ok) { "http://team-mem/" } else { "http://team-mem:7438/" }
+
+    } else {
+        # ── non-admin path: registry Run key, port 7438 ───────────────────────
+        $RegPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+        Set-ItemProperty -Path $RegPath -Name 'TeamMemoryMCP' -Value "`"$ExePath`" --port 7438" -ErrorAction Stop
+        Write-Host "  Autostart registered in HKCU Run key"
+
+        # Start now in background (don't wait)
+        Start-Process -FilePath $ExePath -ArgumentList '--port 7438' -WindowStyle Hidden
+        Write-Host "  Started team-memory-mcp on port 7438"
+
+        Write-Host ""
+        Write-Host "  NOTE: http://team-mem/ shortcut requires admin. To set it up:"
+        Write-Host "    1. Re-run this script as Administrator"
+        Write-Host "    OR manually add to $env:SystemRoot\System32\drivers\etc\hosts:"
+        Write-Host "       127.0.0.1 team-mem"
+        Write-Host "    (then access via http://team-mem:7438/)"
+
+        $WebUrl = "http://127.0.0.1:7438/"
     }
-
-    # ── Task Scheduler (RunLevel Limited — no admin needed) ───────────────────
-    $TaskName = "TeamMemoryMCP"
-    $ExePath  = "$BinDir\$Binary.exe"
-    $Action   = New-ScheduledTaskAction -Execute $ExePath -Argument "--port 7438"
-    $Trigger  = New-ScheduledTaskTrigger -AtLogOn
-    $Settings = New-ScheduledTaskSettingsSet `
-        -RestartCount 3 `
-        -RestartInterval (New-TimeSpan -Minutes 1) `
-        -ExecutionTimeLimit 0 `
-        -MultipleInstances IgnoreNew
-    $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Limited
-
-    Register-ScheduledTask `
-        -TaskName $TaskName `
-        -Action $Action `
-        -Trigger $Trigger `
-        -Settings $Settings `
-        -Principal $Principal `
-        -Force | Out-Null
-
-    try {
-        Start-ScheduledTask -TaskName $TaskName
-        Write-Host "  Task '$TaskName' registered and started"
-    } catch {
-        Write-Host "  Task '$TaskName' registered (starts at next logon)"
-    }
-    Write-Host "  Manage: Get-ScheduledTask -TaskName $TaskName"
-
-    $WebUrl = if ($HostsOk) { "http://team-mem:7438/" } else { "http://127.0.0.1:7438/" }
 } else {
     $WebUrl = "http://127.0.0.1:7438/  (available while Claude Code is running)"
 }
