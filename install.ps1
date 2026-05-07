@@ -243,7 +243,7 @@ if ($RunChoice -eq "1") {
 
 # ── summary ───────────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "✓ team-memory-mcp installed"
+Write-Host "team-memory-mcp installed OK"
 Write-Host ""
 Write-Host "  Binary:  $BinDir\$Binary.exe"
 Write-Host "  Config:  $env:APPDATA\team-memory\config.json"
