@@ -97,6 +97,14 @@ if ($PAT -and $Slug) {
     Write-Host "  Write $ConfigFile manually or re-run install.ps1."
 }
 
+# ── choose run mode ───────────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "How should team-memory-mcp run?"
+Write-Host "  1) System service  — always available; open http://team-mem/ in browser"
+Write-Host "  2) With Claude Code — auto-starts when Claude Code runs (lighter weight)"
+$RunChoice = Read-Host "Choice [1/2, default 2]"
+if (-not $RunChoice) { $RunChoice = "2" }
+
 # ── wire Claude Code hooks ────────────────────────────────────────────────────
 $SettingsPath = "$env:USERPROFILE\.claude\settings.json"
 $SettingsDir  = Split-Path $SettingsPath
@@ -136,25 +144,96 @@ $HooksPy | python - $SettingsPath
 $ClaudeJson = "$env:USERPROFILE\.claude.json"
 if (-not (Test-Path $ClaudeJson)) { '{}' | Set-Content $ClaudeJson -Encoding UTF8 }
 
+# Service mode: Claude Code starts on port 7439 to avoid conflict with service on 7438
+$McpArgs = if ($RunChoice -eq "1") { '["--mcp","--port","7439"]' } else { '["--mcp"]' }
+
 $McpPy = @'
 import sys, json
 
 path = sys.argv[1]
 binary_path = sys.argv[2]
+args = json.loads(sys.argv[3])
 with open(path, encoding='utf-8') as f:
     data = json.load(f)
 
 data.setdefault('mcpServers', {})
 if 'team-memory' not in data['mcpServers']:
-    data['mcpServers']['team-memory'] = {'command': binary_path, 'args': ['--mcp']}
+    data['mcpServers']['team-memory'] = {'command': binary_path, 'args': args}
     print('  MCP server registered')
 else:
-    print('  MCP server already registered')
+    data['mcpServers']['team-memory']['args'] = args
+    print('  MCP server updated')
 
 with open(path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
 '@
-$McpPy | python - $ClaudeJson "$BinDir\$Binary.exe"
+$McpPy | python - $ClaudeJson "$BinDir\$Binary.exe" $McpArgs
+
+# ── service setup ─────────────────────────────────────────────────────────────
+$Port = 7438
+$WebUrl = "http://127.0.0.1:$Port/"
+
+if ($RunChoice -eq "1") {
+    # ── add hosts entry ───────────────────────────────────────────────────────
+    $HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
+    try {
+        $HostsContent = Get-Content $HostsFile -Raw -ErrorAction SilentlyContinue
+        if ($HostsContent -notlike "*team-mem*") {
+            Add-Content -Path $HostsFile -Value "`r`n127.0.0.1 team-mem" -ErrorAction Stop
+            Write-Host "  Added team-mem to hosts file"
+        } else {
+            Write-Host "  team-mem already in hosts file"
+        }
+    } catch {
+        Write-Host "  Could not write hosts file (run as Administrator to add team-mem shortcut)"
+        Write-Host "  Manual: add '127.0.0.1 team-mem' to $HostsFile"
+    }
+
+    # ── grant port 80 via netsh (requires elevation) ──────────────────────────
+    try {
+        $null = & netsh http add urlacl url="http://team-mem:80/" user="$env:USERNAME" 2>&1
+        $Port = 80
+        $WebUrl = "http://team-mem/"
+        Write-Host "  Port 80 granted — browser URL: http://team-mem/"
+    } catch {
+        $WebUrl = "http://team-mem:7438/"
+        Write-Host "  Port 80 not granted (needs elevation) — browser URL: http://team-mem:7438/"
+    }
+
+    # ── Task Scheduler ────────────────────────────────────────────────────────
+    $TaskName = "TeamMemoryMCP"
+    $PortStr  = "$Port"
+    $ExePath  = "$BinDir\$Binary.exe"
+    $Action   = New-ScheduledTaskAction -Execute $ExePath -Argument "--port $PortStr"
+    $Trigger  = New-ScheduledTaskTrigger -AtLogOn
+    $Settings = New-ScheduledTaskSettingsSet `
+        -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 1) `
+        -ExecutionTimeLimit 0 `
+        -MultipleInstances IgnoreNew
+    $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest
+
+    Register-ScheduledTask `
+        -TaskName $TaskName `
+        -Action $Action `
+        -Trigger $Trigger `
+        -Settings $Settings `
+        -Principal $Principal `
+        -Force | Out-Null
+
+    # Start it now (don't wait for next logon)
+    try {
+        Start-ScheduledTask -TaskName $TaskName
+        Write-Host "  Task Scheduler task '$TaskName' registered and started"
+    } catch {
+        Write-Host "  Task Scheduler task '$TaskName' registered (starts at next logon)"
+    }
+    Write-Host "  Manage: Get-ScheduledTask -TaskName $TaskName"
+
+    $WebUrl = if ($Port -eq 80) { "http://team-mem/" } else { "http://team-mem:$Port/" }
+} else {
+    $WebUrl = "http://127.0.0.1:$Port/  (available while Claude Code is running)"
+}
 
 # ── summary ───────────────────────────────────────────────────────────────────
 Write-Host ""
@@ -164,8 +243,6 @@ Write-Host "  Binary:  $BinDir\$Binary.exe"
 Write-Host "  Config:  $env:APPDATA\team-memory\config.json"
 Write-Host "  Hooks:   $env:USERPROFILE\.claude\settings.json  (Stop, PreCompact)"
 Write-Host "  MCP:     $env:USERPROFILE\.claude.json           (team-memory server)"
+Write-Host "  Web UI:  $WebUrl"
 Write-Host ""
 Write-Host "  Restart your terminal for PATH changes to take effect."
-if ($Slug) {
-    Write-Host "  Start a Claude Code session — it will auto-save to $Slug when you stop."
-}

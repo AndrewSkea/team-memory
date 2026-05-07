@@ -4,7 +4,7 @@ else
   EXT :=
 endif
 
-.PHONY: build install test prompts mcp test-mcp test-frontend
+.PHONY: build install test prompts mcp test-mcp test-frontend test-e2e test-all
 
 prompts:
 	bash scripts/copy-prompts.sh
@@ -21,10 +21,15 @@ install: build
 	@echo "Make sure ~/bin is on your PATH"
 	@echo "To wire hooks and MCP, run: sh install.sh"
 
-test-mcp:
+test-mcp: build
 	cd mcp && go test ./...
 
 test-frontend:
 	npm test
 
+test-e2e: build
+	npm run test:e2e
+
 test: test-frontend test-mcp
+
+test-all: test test-e2e

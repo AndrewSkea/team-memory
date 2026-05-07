@@ -81,15 +81,15 @@ CONFIG_FILE="$CONFIG_DIR/config.json"
 EXISTING_PAT=""
 EXISTING_SLUG=""
 if [ -f "$CONFIG_FILE" ]; then
-  EXISTING_PAT=$(python3 -c "import json,sys; d=json.load(open('$CONFIG_FILE')); print(d.get('token',''))" 2>/dev/null || true)
-  EXISTING_OWNER=$(python3 -c "import json,sys; d=json.load(open('$CONFIG_FILE')); print(d.get('owner',''))" 2>/dev/null || true)
-  EXISTING_REPO=$(python3 -c "import json,sys; d=json.load(open('$CONFIG_FILE')); print(d.get('repo',''))" 2>/dev/null || true)
+  EXISTING_PAT=$(python3 -c "import json; d=json.load(open('$CONFIG_FILE')); print(d.get('token',''))" 2>/dev/null || true)
+  EXISTING_OWNER=$(python3 -c "import json; d=json.load(open('$CONFIG_FILE')); print(d.get('owner',''))" 2>/dev/null || true)
+  EXISTING_REPO=$(python3 -c "import json; d=json.load(open('$CONFIG_FILE')); print(d.get('repo',''))" 2>/dev/null || true)
   if [ -n "$EXISTING_OWNER" ] && [ -n "$EXISTING_REPO" ]; then
     EXISTING_SLUG="$EXISTING_OWNER/$EXISTING_REPO"
   fi
 fi
 
-# ── prompt for config (use /dev/tty so this works when piped through sh) ─────
+# ── prompt for config ─────────────────────────────────────────────────────────
 echo ""
 if [ -n "$EXISTING_PAT" ]; then
   printf "GitHub PAT [keep existing]: " >/dev/tty
@@ -124,7 +124,16 @@ else
   echo "  Run install.sh again, or write $CONFIG_FILE manually."
 fi
 
-# ── wire Claude Code hooks ───────────────────────────────────────────────────
+# ── choose run mode ───────────────────────────────────────────────────────────
+echo ""
+echo "How should team-memory-mcp run?"
+echo "  1) System service  — always available; open http://team-mem/ in browser"
+echo "  2) With Claude Code — auto-starts when Claude Code runs (lighter weight)"
+printf "Choice [1/2, default 2]: " >/dev/tty
+read -r RUN_CHOICE </dev/tty || RUN_CHOICE=""
+[ -z "$RUN_CHOICE" ] && RUN_CHOICE="2"
+
+# ── wire Claude Code hooks (both modes need hooks for session-end/precompact) ─
 SETTINGS="$HOME/.claude/settings.json"
 mkdir -p "$(dirname "$SETTINGS")"
 [ -f "$SETTINGS" ] || printf '{}' > "$SETTINGS"
@@ -161,24 +170,129 @@ PYEOF
 CLAUDE_JSON="$HOME/.claude.json"
 [ -f "$CLAUDE_JSON" ] || printf '{}' > "$CLAUDE_JSON"
 
-python3 - "$CLAUDE_JSON" "$BIN_DIR/$BINARY" <<'PYEOF'
+# In service mode the server is always running; disable auto-start from Claude Code.
+# In claude-code mode, Claude Code auto-starts the process via the 'command' field.
+if [ "$RUN_CHOICE" = "1" ]; then
+  MCP_COMMAND="team-memory-mcp"
+  MCP_ARGS='["--mcp", "--port", "7439"]'   # use 7439 so it doesn't conflict with service on 7438
+  SERVICE_MODE=true
+else
+  MCP_COMMAND="team-memory-mcp"
+  MCP_ARGS='["--mcp"]'
+  SERVICE_MODE=false
+fi
+
+python3 - "$CLAUDE_JSON" "$MCP_COMMAND" "$MCP_ARGS" <<'PYEOF'
 import sys, json
 
-path = sys.argv[1]
-binary_path = sys.argv[2]
+path, command, args_str = sys.argv[1], sys.argv[2], sys.argv[3]
+args = json.loads(args_str)
 with open(path) as f:
     data = json.load(f)
 
 data.setdefault('mcpServers', {})
 if 'team-memory' not in data['mcpServers']:
-    data['mcpServers']['team-memory'] = {'command': binary_path, 'args': ['--mcp']}
+    data['mcpServers']['team-memory'] = {'command': command, 'args': args}
     print('  MCP server registered')
 else:
-    print('  MCP server already registered')
+    # Update args in case port changed
+    data['mcpServers']['team-memory']['args'] = args
+    print('  MCP server updated')
 
 with open(path, 'w') as f:
     json.dump(data, f, indent=2)
 PYEOF
+
+# ── service setup ─────────────────────────────────────────────────────────────
+PORT=7438
+
+if [ "$RUN_CHOICE" = "1" ]; then
+  # ── add hosts entry ──────────────────────────────────────────────────────
+  if ! grep -qF 'team-mem' /etc/hosts 2>/dev/null; then
+    if echo "127.0.0.1 team-mem" | sudo tee -a /etc/hosts >/dev/null 2>&1; then
+      echo "  Added team-mem to /etc/hosts"
+    else
+      echo "  Could not write /etc/hosts (no sudo) — add manually:"
+      echo "    echo '127.0.0.1 team-mem' | sudo tee -a /etc/hosts"
+    fi
+  else
+    echo "  team-mem already in /etc/hosts"
+  fi
+
+  # ── try to grant port 80 binding (Linux only) ─────────────────────────────
+  if [ "$OS" = "linux" ] && command -v setcap >/dev/null 2>&1; then
+    if sudo setcap 'cap_net_bind_service=+ep' "$BIN_DIR/$BINARY" 2>/dev/null; then
+      PORT=80
+      echo "  Port 80 granted via setcap — browser URL: http://team-mem/"
+    else
+      echo "  setcap failed — browser URL: http://team-mem:7438/"
+    fi
+  else
+    echo "  Browser URL: http://team-mem:7438/"
+  fi
+
+  if [ "$OS" = "linux" ]; then
+    # ── systemd user service ───────────────────────────────────────────────
+    SVCDIR="$HOME/.config/systemd/user"
+    mkdir -p "$SVCDIR"
+    cat > "$SVCDIR/team-memory-mcp.service" <<EOF
+[Unit]
+Description=Team Memory MCP Server
+After=default.target
+
+[Service]
+ExecStart=$BIN_DIR/$BINARY --port $PORT
+Restart=on-failure
+RestartSec=5s
+Environment=HOME=$HOME
+
+[Install]
+WantedBy=default.target
+EOF
+    systemctl --user daemon-reload
+    systemctl --user enable --now team-memory-mcp
+    echo "  systemd user service started"
+    echo "  Manage: systemctl --user status team-memory-mcp"
+
+  elif [ "$OS" = "darwin" ]; then
+    # ── launchd user agent (macOS) ────────────────────────────────────────
+    PLIST_DIR="$HOME/Library/LaunchAgents"
+    PLIST="$PLIST_DIR/com.team-memory.mcp.plist"
+    LOG_DIR="$HOME/.local/share/team-memory"
+    mkdir -p "$PLIST_DIR" "$LOG_DIR"
+    cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.team-memory.mcp</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$BIN_DIR/$BINARY</string>
+    <string>--port</string>
+    <string>$PORT</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>$LOG_DIR/mcp.log</string>
+  <key>StandardErrorPath</key>
+  <string>$LOG_DIR/mcp.log</string>
+</dict>
+</plist>
+EOF
+    # Unload existing if present, then load
+    launchctl unload "$PLIST" 2>/dev/null || true
+    launchctl load -w "$PLIST"
+    echo "  launchd agent loaded"
+    echo "  Manage: launchctl list | grep team-memory"
+    echo "  Log:    tail -f $LOG_DIR/mcp.log"
+    echo "  Browser URL: http://team-mem:$PORT/"
+  fi
+fi
 
 # ── summary ──────────────────────────────────────────────────────────────────
 echo ""
@@ -187,9 +301,16 @@ echo ""
 echo "  Binary:  $BIN_DIR/$BINARY"
 echo "  Config:  ${XDG_CONFIG_HOME:-$HOME/.config}/team-memory/config.json"
 echo "  Hooks:   $HOME/.claude/settings.json  (Stop, PreCompact)"
-echo "  MCP:     $HOME/.claude.json           (auto-starts server)"
+echo "  MCP:     $HOME/.claude.json           (team-memory server)"
+echo ""
+if [ "$RUN_CHOICE" = "1" ]; then
+  if [ "$PORT" = "80" ]; then
+    echo "  Web UI:  http://team-mem/"
+  else
+    echo "  Web UI:  http://team-mem:$PORT/"
+  fi
+else
+  echo "  Web UI:  http://127.0.0.1:7438/  (available while Claude Code is running)"
+fi
 echo ""
 echo "  Restart your terminal for PATH changes to take effect."
-if [ -n "$SLUG" ]; then
-  echo "  Start a Claude Code session — it will auto-save to $SLUG when you stop."
-fi

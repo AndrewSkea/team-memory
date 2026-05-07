@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/AndrewSkea/team-memory/mcp/config"
 	gh "github.com/AndrewSkea/team-memory/mcp/github"
@@ -19,7 +21,7 @@ import (
 func main() {
 	once := flag.String("once", "", "run one-shot command (session-end|precompact) and exit")
 	mcp  := flag.Bool("mcp", false, "run as MCP stdio server (used by Claude Code)")
-	port := flag.String("port", "7438", "loopback port")
+	port := flag.String("port", "7438", "loopback port for HTTP server")
 	flag.Parse()
 
 	if *once != "" {
@@ -32,23 +34,43 @@ func main() {
 
 	runner := llm.NewClaude("")
 	srv := server.New(server.Config{Runner: runner})
+	handler := buildHandler(srv)
 	addr := "127.0.0.1:" + *port
 
 	if *mcp {
-		// MCP mode: serve HTTP in background, handle MCP stdio on main goroutine
-		go func() {
-			if err := http.ListenAndServe(addr, server.WithCORS(srv.Handler())); err != nil {
-				log.Printf("HTTP: %v", err)
-			}
-		}()
+		go tryListen(addr, handler)
+		go tryListen("127.0.0.1:80", handler)
 		if err := runMCPStdio(); err != nil {
 			log.Fatalf("MCP stdio: %v", err)
 		}
 		return
 	}
 
-	log.Printf("team-memory-mcp listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, server.WithCORS(srv.Handler())))
+	go tryListen("127.0.0.1:80", handler)
+	log.Printf("team-memory listening on http://127.0.0.1:%s/  (also trying :80)", *port)
+	log.Fatal(http.ListenAndServe(addr, handler))
+}
+
+func buildHandler(srv *server.Server) http.Handler {
+	sub, err := fs.Sub(frontendFiles, "frontend")
+	if err != nil {
+		log.Fatalf("embed: %v", err)
+	}
+	fileServer := http.FileServer(http.FS(sub))
+	apiHandler := server.WithCORS(srv.Handler())
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || strings.HasPrefix(r.URL.Path, "/v1/") {
+			apiHandler.ServeHTTP(w, r)
+			return
+		}
+		fileServer.ServeHTTP(w, r)
+	})
+}
+
+func tryListen(addr string, h http.Handler) {
+	if err := http.ListenAndServe(addr, h); err != nil {
+		log.Printf("HTTP %s: %v", addr, err)
+	}
 }
 
 type hookEvent struct {

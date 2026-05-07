@@ -5,9 +5,9 @@ import { computeStats } from "../services/stats.js";
 export function renderStats(root, { config, toast }) {
   root.innerHTML = `
     <div class="card">
-      <h2>Stats</h2>
+      <div class="section-label">Memory bank stats</div>
       <div id="stats-body">
-        <p class="muted">Loading…</p>
+        <p style="color:var(--muted);font-size:14px;">Loading…</p>
       </div>
     </div>
   `;
@@ -19,47 +19,42 @@ export function renderStats(root, { config, toast }) {
     const autoCaptures = s.bySource.Stop + s.bySource.PreCompact;
     const pct = s.total > 0 ? Math.round((autoCaptures / s.total) * 100) : 0;
     document.getElementById("stats-body").innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-        ${stat("Total memories", s.total)}
-        ${stat("This week", s.thisWeek)}
-        ${stat("Auto-captured", autoCaptures, `${pct}% of total`)}
-        ${stat("Manual (UI)", s.bySource.UI)}
-        ${stat("Topics covered", s.filesCount + " files")}
-        ${stat("Lookups run", s.lookups)}
+      <div class="stats-grid">
+        ${cell("Total memories", s.total)}
+        ${cell("This week", s.thisWeek)}
+        ${cell("Auto-captured", autoCaptures, `${pct}% of total`)}
+        ${cell("Manual (UI)", s.bySource.UI)}
+        ${cell("Files", s.filesCount)}
+        ${cell("Lookups", s.lookups)}
       </div>
-      <div style="margin-top:8px;">
-        <p class="muted" style="margin:0 0 4px;">By source</p>
-        ${bar("Stop hook", s.bySource.Stop, s.total, "#c84e1a")}
-        ${bar("PreCompact hook", s.bySource.PreCompact, s.total, "#8b6914")}
-        ${bar("UI", s.bySource.UI, s.total, "#4a7c59")}
-      </div>
-      <p class="muted" style="margin-top:16px;font-size:12px;">
+      <div class="section-label" style="margin-top:16px;margin-bottom:10px;">By source</div>
+      ${bar("Stop hook", s.bySource.Stop, s.total, "#c84e1a")}
+      ${bar("PreCompact hook", s.bySource.PreCompact, s.total, "#8b6914")}
+      ${bar("UI", s.bySource.UI, s.total, "#3d9e5e")}
+      <p style="margin-top:14px;font-size:12px;color:var(--muted);">
         Repo: <a href="https://github.com/${config.owner}/${config.repo}" target="_blank">${config.owner}/${config.repo}</a>
       </p>
     `;
   }).catch(e => {
-    document.getElementById("stats-body").innerHTML = `<p class="muted" style="color:var(--danger)">Failed to load: ${e.message}</p>`;
+    document.getElementById("stats-body").innerHTML =
+      `<p style="color:var(--danger);font-size:14px;">Failed to load: ${e.message}</p>`;
   });
 }
 
-function stat(label, value, sub = "") {
+function cell(label, value, sub = "") {
   return `
-    <div style="background:var(--bg);border-radius:8px;padding:12px;">
-      <div style="font-size:24px;font-weight:600;color:var(--accent)">${value}</div>
-      <div style="font-size:13px;color:var(--text)">${label}</div>
-      ${sub ? `<div class="muted" style="font-size:11px;">${sub}</div>` : ""}
+    <div class="stat-cell">
+      <div class="stat-value">${value}</div>
+      <div class="stat-label">${label}</div>
+      ${sub ? `<div class="stat-sub">${sub}</div>` : ""}
     </div>`;
 }
 
 function bar(label, count, total, color) {
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   return `
-    <div style="margin-bottom:6px;">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;">
-        <span>${label}</span><span>${count} (${pct}%)</span>
-      </div>
-      <div style="background:var(--border);border-radius:3px;height:6px;">
-        <div style="width:${pct}%;background:${color};height:6px;border-radius:3px;transition:width 0.3s;"></div>
-      </div>
+    <div class="bar-row">
+      <div class="bar-meta"><span>${label}</span><span>${count} (${pct}%)</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
     </div>`;
 }
