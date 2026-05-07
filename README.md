@@ -2,12 +2,12 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A local-first knowledge base for developers — built through two complementary flows:
+A local-first knowledge base for in your own Knowledge GitHub repo - versioned, searchable, and fully yours. Think of it as a personal wiki that grows passively as you code, with the option to add to it directly whenever you want. No cloud, no subscriptions, no lock-in.
+
+Build the knowledge via 2 flows:
 
 - **Web UI** — a clean note-taking interface to capture decisions, patterns, gotchas, and workflows whenever you think of them
 - **Claude Code CLI** — a session-end hook that automatically summarises what you built and commits a structured entry to your knowledge base without any manual effort
-
-Everything is stored as plain Markdown in your own GitHub repo, versioned, searchable, and fully yours. Think of it as a personal wiki that grows passively as you code, with the option to add to it directly whenever you want. No cloud, no subscriptions, no lock-in.
 
 ![team-memory web UI](assets/image.png)
 
