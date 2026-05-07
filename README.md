@@ -2,7 +2,9 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Local-first memory for Claude Code. Every session is automatically summarised and committed to your own GitHub repo as Markdown. Browse, search, and recall knowledge through a clean web UI — no cloud, no subscriptions, your data stays yours.
+A local-first knowledge base for developers. Capture decisions, patterns, gotchas, and workflows through a clean note-taking UI — then let Claude Code automatically surface and add to that knowledge as you work. Everything is stored as plain Markdown in your own GitHub repo, versioned, searchable, and fully yours.
+
+Think of it as a personal wiki that grows with every coding session: save notes manually, or let the session-end hook summarise what you built and commit it automatically. No cloud, no subscriptions, no lock-in.
 
 ![team-memory web UI](assets/image.png)
 
