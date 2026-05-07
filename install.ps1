@@ -100,7 +100,7 @@ if ($PAT -and $Slug) {
 # ── choose run mode ───────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "How should team-memory-mcp run?"
-Write-Host "  1) System service  — always available; open http://team-mem/ in browser"
+Write-Host "  1) System service  — always available; open http://127.0.0.1:7438/ in browser"
 Write-Host "  2) With Claude Code — auto-starts when Claude Code runs (lighter weight)"
 $RunChoice = Read-Host "Choice [1/2, default 2]"
 if (-not $RunChoice) { $RunChoice = "2" }
@@ -109,7 +109,7 @@ if (-not $RunChoice) { $RunChoice = "2" }
 $SettingsPath = "$env:USERPROFILE\.claude\settings.json"
 $SettingsDir  = Split-Path $SettingsPath
 if (-not (Test-Path $SettingsDir)) { New-Item -ItemType Directory -Path $SettingsDir | Out-Null }
-if (-not (Test-Path $SettingsPath)) { '{}' | Set-Content $SettingsPath -Encoding UTF8 }
+if (-not (Test-Path $SettingsPath)) { [System.IO.File]::WriteAllText($SettingsPath, '{}', (New-Object System.Text.UTF8Encoding $false)) }
 
 $HooksPy = @'
 import sys, json
@@ -142,7 +142,7 @@ $HooksPy | python - $SettingsPath
 
 # ── register MCP server in ~/.claude.json ────────────────────────────────────
 $ClaudeJson = "$env:USERPROFILE\.claude.json"
-if (-not (Test-Path $ClaudeJson)) { '{}' | Set-Content $ClaudeJson -Encoding UTF8 }
+if (-not (Test-Path $ClaudeJson)) { [System.IO.File]::WriteAllText($ClaudeJson, '{}', (New-Object System.Text.UTF8Encoding $false)) }
 
 # Service mode: Claude Code starts on port 7439 to avoid conflict with service on 7438
 $McpArgs = if ($RunChoice -eq "1") { '["--mcp","--port","7439"]' } else { '["--mcp"]' }
@@ -174,44 +174,35 @@ $Port = 7438
 $WebUrl = "http://127.0.0.1:$Port/"
 
 if ($RunChoice -eq "1") {
-    # ── add hosts entry ───────────────────────────────────────────────────────
+    # ── try hosts entry (graceful — needs admin, not fatal if missing) ────────
     $HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
+    $HostsOk   = $false
     try {
         $HostsContent = Get-Content $HostsFile -Raw -ErrorAction SilentlyContinue
         if ($HostsContent -notlike "*team-mem*") {
             Add-Content -Path $HostsFile -Value "`r`n127.0.0.1 team-mem" -ErrorAction Stop
             Write-Host "  Added team-mem to hosts file"
+            $HostsOk = $true
         } else {
             Write-Host "  team-mem already in hosts file"
+            $HostsOk = $true
         }
     } catch {
-        Write-Host "  Could not write hosts file (run as Administrator to add team-mem shortcut)"
-        Write-Host "  Manual: add '127.0.0.1 team-mem' to $HostsFile"
+        Write-Host "  Hosts file needs admin — skipping"
+        Write-Host "  To add later: add '127.0.0.1 team-mem' to $HostsFile"
     }
 
-    # ── grant port 80 via netsh (requires elevation) ──────────────────────────
-    try {
-        $null = & netsh http add urlacl url="http://team-mem:80/" user="$env:USERNAME" 2>&1
-        $Port = 80
-        $WebUrl = "http://team-mem/"
-        Write-Host "  Port 80 granted — browser URL: http://team-mem/"
-    } catch {
-        $WebUrl = "http://team-mem:7438/"
-        Write-Host "  Port 80 not granted (needs elevation) — browser URL: http://team-mem:7438/"
-    }
-
-    # ── Task Scheduler ────────────────────────────────────────────────────────
+    # ── Task Scheduler (RunLevel Limited — no admin needed) ───────────────────
     $TaskName = "TeamMemoryMCP"
-    $PortStr  = "$Port"
     $ExePath  = "$BinDir\$Binary.exe"
-    $Action   = New-ScheduledTaskAction -Execute $ExePath -Argument "--port $PortStr"
+    $Action   = New-ScheduledTaskAction -Execute $ExePath -Argument "--port 7438"
     $Trigger  = New-ScheduledTaskTrigger -AtLogOn
     $Settings = New-ScheduledTaskSettingsSet `
         -RestartCount 3 `
         -RestartInterval (New-TimeSpan -Minutes 1) `
         -ExecutionTimeLimit 0 `
         -MultipleInstances IgnoreNew
-    $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest
+    $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Limited
 
     Register-ScheduledTask `
         -TaskName $TaskName `
@@ -221,18 +212,17 @@ if ($RunChoice -eq "1") {
         -Principal $Principal `
         -Force | Out-Null
 
-    # Start it now (don't wait for next logon)
     try {
         Start-ScheduledTask -TaskName $TaskName
-        Write-Host "  Task Scheduler task '$TaskName' registered and started"
+        Write-Host "  Task '$TaskName' registered and started"
     } catch {
-        Write-Host "  Task Scheduler task '$TaskName' registered (starts at next logon)"
+        Write-Host "  Task '$TaskName' registered (starts at next logon)"
     }
     Write-Host "  Manage: Get-ScheduledTask -TaskName $TaskName"
 
-    $WebUrl = if ($Port -eq 80) { "http://team-mem/" } else { "http://team-mem:$Port/" }
+    $WebUrl = if ($HostsOk) { "http://team-mem:7438/" } else { "http://127.0.0.1:7438/" }
 } else {
-    $WebUrl = "http://127.0.0.1:$Port/  (available while Claude Code is running)"
+    $WebUrl = "http://127.0.0.1:7438/  (available while Claude Code is running)"
 }
 
 # ── summary ───────────────────────────────────────────────────────────────────
