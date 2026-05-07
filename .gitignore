@@ -3,6 +3,9 @@
 .env.*
 *.exe
 *.exe~
+
+# Temp / local
+design-*.html
 */team-memory-mcp
 */team-memory-mcp~
 playwright-report/
