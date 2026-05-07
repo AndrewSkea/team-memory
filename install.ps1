@@ -93,7 +93,7 @@ if ($PAT -and $Slug) {
     [System.IO.File]::WriteAllText($ConfigFile, $ConfigJson, (New-Object System.Text.UTF8Encoding $false))
     Write-Host "Config written to $ConfigFile"
 } else {
-    Write-Host "Warning: PAT or repo blank — skipping config."
+    Write-Host "Warning: PAT or repo blank - skipping config."
     Write-Host "  Write $ConfigFile manually or re-run install.ps1."
 }
 
@@ -103,13 +103,13 @@ $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 # ── choose run mode ───────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "How should team-memory-mcp run?"
-Write-Host "  1) Always-on service — starts at login, browser at http://127.0.0.1:7438/"
+Write-Host "  1) Always-on service - starts at login, browser at http://127.0.0.1:7438/"
 if ($IsAdmin) {
     Write-Host "     (running as admin: also sets up http://team-mem/ shortcut)"
 } else {
     Write-Host "     (not admin: uses registry Run key; re-run as admin for http://team-mem/ shortcut)"
 }
-Write-Host "  2) With Claude Code  — auto-starts when Claude Code runs (lighter weight)"
+Write-Host "  2) With Claude Code  - auto-starts when Claude Code runs (lighter weight)"
 $RunChoice = Read-Host "Choice [1/2, default 2]"
 if (-not $RunChoice) { $RunChoice = "2" }
 
@@ -201,9 +201,9 @@ if ($RunChoice -eq "1") {
         try {
             $null = & netsh http add urlacl url="http://team-mem:80/" user="$env:USERNAME" 2>&1
             $Port80Ok = $true
-            Write-Host "  Port 80 granted — browser URL: http://team-mem/"
+            Write-Host "  Port 80 granted - browser URL: http://team-mem/"
         } catch {
-            Write-Host "  netsh failed — browser URL: http://team-mem:7438/"
+            Write-Host "  netsh failed - browser URL: http://team-mem:7438/"
         }
 
         $TaskName  = "TeamMemoryMCP"
