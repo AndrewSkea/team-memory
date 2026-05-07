@@ -19,3 +19,7 @@ mcp/team-memory-mcp.exe
 # Generated prompt copies (source of truth is prompts/)
 frontend/prompts/*.txt
 mcp/prompts/*.txt
+
+# Generated frontend embed (populated by `make build` / copy-prompts.sh)
+# On fresh checkout, run `make build` before `go build ./mcp/...`
+mcp/frontend/
