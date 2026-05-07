@@ -6,6 +6,9 @@
 
 # Temp / local
 design-*.html
+
+# Internal planning docs
+docs/
 */team-memory-mcp
 */team-memory-mcp~
 playwright-report/

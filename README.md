@@ -50,20 +50,6 @@ Then access via `http://team-mem:7438/` (no portproxy without admin).
 After install, just use Claude Code normally. When you end a session, `team-memory-mcp`
 automatically summarises it and commits a structured entry to your memory repo.
 
-## Web UI (optional)
-
-The web UI lets you browse, search, and manually add memories.
-
-**Prereqs:** Node 20+
-
-```bash
-make prompts
-npm run serve
-# open http://localhost:8080
-```
-
-Setup page: paste PAT, owner/repo, and optionally an Anthropic API key.
-
 ## Tests
 
 ```bash
