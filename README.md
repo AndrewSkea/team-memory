@@ -29,15 +29,21 @@ The installer offers two run modes. Service mode keeps the web UI available at a
 | | Non-admin (default) | Admin (`Run as Administrator`) |
 |---|---|---|
 | Autostart | Registry `HKCU\...\Run` key | Task Scheduler (`RunLevel Highest`) |
-| Port | 7438 | 80 (via `netsh urlacl`) |
+| Binary port | 7438 | 7438 |
 | Browser URL | `http://127.0.0.1:7438/` | `http://team-mem/` |
 | `team-mem` hostname | Manual (see below) | Auto-added to hosts file |
+| Port 80 redirect | - | `netsh interface portproxy` 80 -> 7438 |
+
+The admin path sets up a `netsh interface portproxy` rule that forwards
+`127.0.0.1:80` to `127.0.0.1:7438`, so `http://team-mem/` resolves via
+the hosts file and hits the portproxy without requiring Go to bind port 80.
 
 To get the `http://team-mem/` shortcut without re-running as admin, add one line to
 `C:\Windows\System32\drivers\etc\hosts` (requires admin once):
 ```
 127.0.0.1 team-mem
 ```
+Then access via `http://team-mem:7438/` (no portproxy without admin).
 
 ## Usage
 

@@ -191,11 +191,12 @@ $WebUrl = "http://127.0.0.1:$Port/"
 
 if ($RunChoice -eq "1") {
     $ExePath = "$BinDir\$Binary.exe"
-    $HostsOk = $false
-
 
     if ($IsAdmin) {
-        # ── admin path: Task Scheduler (RunLevel Highest) + hosts + port 80 ──
+        # ── admin path: Task Scheduler (RunLevel Highest) + hosts + portproxy 80->7438 ──
+        # Go uses raw sockets (net.Listen), not HTTP.sys, so binding port 80 directly
+        # requires the process to be elevated. Using portproxy avoids that: the binary
+        # always listens on 7438 and netsh forwards 127.0.0.1:80 -> 127.0.0.1:7438.
         $HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
         $HostsContent = Get-Content $HostsFile -Raw -ErrorAction SilentlyContinue
         if ($HostsContent -notlike "*team-mem*") {
@@ -204,28 +205,36 @@ if ($RunChoice -eq "1") {
         } else {
             Write-Host "  team-mem already in hosts file"
         }
-        $HostsOk = ($HostsContent -like "*team-mem*") -or $true
 
-        $Port80Ok = $false
-        try {
-            $null = & netsh http add urlacl url="http://team-mem:80/" user="$env:USERNAME" 2>&1
-            $Port80Ok = $true
-            Write-Host "  Port 80 granted - browser URL: http://team-mem/"
-        } catch {
-            Write-Host "  netsh failed - browser URL: http://team-mem:7438/"
+        # portproxy: browser hits team-mem:80 -> 127.0.0.1:7438
+        & netsh interface portproxy add v4tov4 listenport=80 listenaddress=127.0.0.1 connectport=7438 connectaddress=127.0.0.1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  Port 80 portproxy set - browser URL: http://team-mem/"
+            $WebUrl = "http://team-mem/"
+        } else {
+            Write-Host "  portproxy failed - browser URL: http://team-mem:7438/"
+            $WebUrl = "http://team-mem:7438/"
         }
 
         $TaskName  = "TeamMemoryMCP"
-        $PortArg   = if ($Port80Ok) { "--port 80" } else { "--port 7438" }
-        $Action    = New-ScheduledTaskAction -Execute $ExePath -Argument $PortArg
+        $Action    = New-ScheduledTaskAction -Execute $ExePath -Argument "--port 7438"
         $Trigger   = New-ScheduledTaskTrigger -AtLogOn
         $Settings  = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit 0 -MultipleInstances IgnoreNew
         $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest
         Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Principal $Principal -Force | Out-Null
-        try { Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop; Write-Host "  Task '$TaskName' registered and started" }
-        catch { Write-Host "  Task '$TaskName' registered (starts at next logon)" }
-
-        $WebUrl = if ($Port80Ok) { "http://team-mem/" } else { "http://team-mem:7438/" }
+        # Kill any existing instance so the task can start cleanly
+        Get-Process -Name $Binary -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 500
+        try {
+            Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+            Start-Sleep -Milliseconds 1000
+            $taskState = (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue).State
+            Write-Host "  Task '$TaskName' registered, state: $taskState"
+        } catch {
+            # Fallback: start directly (task will still auto-start at next logon)
+            Start-Process -FilePath $ExePath -ArgumentList '--port 7438' -WindowStyle Hidden
+            Write-Host "  Task '$TaskName' registered (started directly as fallback)"
+        }
 
     } else {
         # ── non-admin path: registry Run key, port 7438 ───────────────────────
