@@ -71,4 +71,16 @@ nav.addEventListener("click", e => {
   if (b) go(b.dataset.page);
 });
 
-go("remember");
+// Bootstrap localStorage from CLI config on first visit (service mode has no localStorage yet)
+async function bootstrap() {
+  if (loadConfig().token) { go("remember"); return; }
+  try {
+    const r = await fetch("http://127.0.0.1:7438/v1/config");
+    if (r.ok) {
+      const cfg = await r.json();
+      if (cfg.token && cfg.owner && cfg.repo) { saveConfig(cfg); }
+    }
+  } catch {}
+  go("remember");
+}
+bootstrap();

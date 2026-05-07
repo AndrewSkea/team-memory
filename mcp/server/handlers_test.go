@@ -73,6 +73,40 @@ func TestCategorize_BadJSON(t *testing.T) {
 	}
 }
 
+func TestGetConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"token":"tok","owner":"o","repo":"r","check_first":false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := New(Config{ConfigPath: cfgPath})
+	req := httptest.NewRequest(http.MethodGet, "/v1/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+	var cfg map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&cfg); err != nil {
+		t.Fatalf("bad json: %v", err)
+	}
+	if cfg["token"] != "tok" || cfg["owner"] != "o" || cfg["repo"] != "r" {
+		t.Errorf("unexpected config: %v", cfg)
+	}
+}
+
+func TestGetConfig_Missing(t *testing.T) {
+	srv := New(Config{ConfigPath: filepath.Join(t.TempDir(), "nonexistent.json")})
+	req := httptest.NewRequest(http.MethodGet, "/v1/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
 func TestExportConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")

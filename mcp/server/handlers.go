@@ -14,6 +14,7 @@ import (
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/health", s.handleHealth)
+	s.mux.HandleFunc("/v1/config", s.handleConfig)
 	s.mux.HandleFunc("/v1/categorize", s.handleCategorize)
 	s.mux.HandleFunc("/v1/summarize", s.handleSummarize)
 	s.mux.HandleFunc("/v1/export-config", s.handleExportConfig)
@@ -130,6 +131,28 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	path := s.cfg.ConfigPath
+	if path == "" {
+		path = config.DefaultPath()
+	}
+	switch r.Method {
+	case http.MethodGet:
+		cfg, err := config.Read(path)
+		if err != nil {
+			if config.IsMissing(err) {
+				writeErr(w, http.StatusNotFound, "no config file")
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, cfg)
+	default:
+		writeErr(w, http.StatusMethodNotAllowed, "GET only")
+	}
 }
 
 func (s *Server) handleExportConfig(w http.ResponseWriter, r *http.Request) {
