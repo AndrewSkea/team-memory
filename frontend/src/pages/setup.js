@@ -92,7 +92,7 @@ export function renderSetup(root, { onDone, config }) {
     const checkFirst = $("#check-first").checked;
     try {
       status.textContent = "Exporting…";
-      const res = await fetch("http://127.0.0.1:7438/v1/export-config", {
+      const res = await fetch("/v1/export-config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, owner, repo, check_first: checkFirst }),

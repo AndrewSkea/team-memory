@@ -93,7 +93,7 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
       btn.textContent = "Tagging…";
       btn.disabled = true;
       saveBtn.disabled = true;
-      const backend = await pickBackend({ anthropicKey: config.anthropicKey, mcpUrl: "http://127.0.0.1:7438" });
+      const backend = await pickBackend({ anthropicKey: config.anthropicKey });
       if (!backend) { toast("No LLM available — configure an Anthropic key or start MCP.", true); return; }
       const indexFile = await getIndex(gh, cache);
       const scope = resolveScope($("#scope").value, config.owner);

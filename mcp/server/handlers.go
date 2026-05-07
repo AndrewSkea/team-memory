@@ -25,7 +25,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if s.claudeAvailable() {
 		claude = "available"
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "claude": claude})
+	v := s.cfg.Version
+	if v == "" {
+		v = "dev"
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "claude": claude, "version": v})
 }
 
 type categorizePayload struct {
