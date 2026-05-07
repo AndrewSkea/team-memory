@@ -4,6 +4,8 @@
 
 Local-first memory for Claude Code. Every session is automatically summarised and committed to your own GitHub repo as Markdown. Browse, search, and recall knowledge through a clean web UI — no cloud, no subscriptions, your data stays yours.
 
+![team-memory web UI](assets/image.png)
+
 ## Features
 
 - **Auto-save sessions** — a hook fires when Claude Code ends a session, summarises it with Claude, and commits a structured entry to your GitHub repo
