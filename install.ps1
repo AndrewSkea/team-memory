@@ -222,19 +222,13 @@ if ($RunChoice -eq "1") {
         $Settings  = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit 0 -MultipleInstances IgnoreNew
         $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest
         Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Principal $Principal -Force | Out-Null
-        # Kill any existing instance so the task can start cleanly
+        Write-Host "  Task '$TaskName' registered (auto-starts at logon)"
+        # Start-ScheduledTask with RunLevel Highest queues rather than starts when called
+        # from within an elevated session. Start directly instead.
         Get-Process -Name $Binary -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 500
-        try {
-            Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop
-            Start-Sleep -Milliseconds 1000
-            $taskState = (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue).State
-            Write-Host "  Task '$TaskName' registered, state: $taskState"
-        } catch {
-            # Fallback: start directly (task will still auto-start at next logon)
-            Start-Process -FilePath $ExePath -ArgumentList '--port 7438' -WindowStyle Hidden
-            Write-Host "  Task '$TaskName' registered (started directly as fallback)"
-        }
+        Start-Process -FilePath $ExePath -ArgumentList '--port 7438' -WindowStyle Hidden
+        Write-Host "  Started team-memory-mcp on port 7438"
 
     } else {
         # ── non-admin path: registry Run key, port 7438 ───────────────────────
