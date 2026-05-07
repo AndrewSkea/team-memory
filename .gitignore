@@ -1,6 +1,13 @@
 # Secrets
 .env
 .env.*
+*.exe
+*.exe~
+*/team-memory-mcp
+*/team-memory-mcp~
+playwright-report/
+test-results/
+
 
 # Node
 node_modules/
