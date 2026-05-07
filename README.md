@@ -8,12 +8,12 @@ to your GitHub repo when the session ends.
 
 **macOS / Linux:**
 ```sh
-curl -LsSf https://raw.githubusercontent.com/AndrewSkea/team-memory/main/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/AndrewSkea/team-memory/master/install.sh | sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/AndrewSkea/team-memory/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/AndrewSkea/team-memory/master/install.ps1 | iex
 ```
 
 The installer downloads and verifies the binary, adds it to `~/bin`, prompts for your
