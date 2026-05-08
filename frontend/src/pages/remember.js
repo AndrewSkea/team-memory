@@ -3,6 +3,7 @@ import { Cache } from "../services/cache.js";
 import { parseIndex, serializeIndex, upsertEntry } from "../services/indexmd.js";
 import { renderEntry } from "../services/entries.js";
 import { pickBackend } from "../services/llm/backend.js";
+import { TEMPLATES, getTemplate } from '../services/templates.js';
 
 const TYPES = ["General", "Meeting Notes", "Programming", "Ideas", "Reminders", "Unsure"];
 
@@ -24,6 +25,13 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
       </div>
 
       <div class="section-label">What would you like to add to the memory bank?</div>
+
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <p class="section-label" style="margin:0">Template</p>
+        <select id="tmpl-select" class="search-input" style="flex:1">
+          ${TEMPLATES.map(t => `<option value="${t.name}">${t.name}</option>`).join('')}
+        </select>
+      </div>
 
       <textarea id="text" placeholder="Describe a useful pattern, a gotcha, a workflow tip, or anything worth sharing with your team…"></textarea>
 
@@ -69,6 +77,16 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
   const $ = sel => root.querySelector(sel);
 
   $("#forget-btn").onclick = forgetAuth;
+
+  const tmplSelect = $("#tmpl-select");
+  const textArea = $("#text");
+  tmplSelect.addEventListener('change', e => {
+    const t = getTemplate(e.target.value);
+    if (textArea.value === '' || textArea.value === (tmplSelect.dataset.lastText ?? '')) {
+      textArea.value = t.text;
+      tmplSelect.dataset.lastText = t.text;
+    }
+  });
 
   $("#unsure").onchange = () => {
     if ($("#unsure").checked) $("#type").value = "Unsure";
