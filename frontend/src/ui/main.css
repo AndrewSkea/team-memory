@@ -531,3 +531,20 @@ pre {
   overflow-x: auto;
   color: var(--text-2);
 }
+
+/* ── Tag chips ── */
+.tag-chip {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border, #e8ddd4);
+  background: var(--bg, #fff);
+  color: var(--text, #1a1a1a);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.tag-chip.active {
+  background: var(--primary, #c0541a);
+  color: #fff;
+  border-color: var(--primary, #c0541a);
+}
