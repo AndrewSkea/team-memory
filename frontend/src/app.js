@@ -10,6 +10,7 @@ import { renderDecisions } from './pages/decisions.js';
 import { renderActions } from './pages/actions.js';
 import { renderTopics } from './pages/topics.js';
 import { renderTimeline } from './pages/timeline.js';
+import { GitHubClient } from './services/github.js';
 
 const CONFIG_KEY = "team-memory:config";
 
@@ -55,6 +56,7 @@ export function go(page) {
     b.classList.toggle("active", b.dataset.page === page);
   }
   updateFooter(config);
+  const gh = new GitHubClient(config);
   if (page === "setup") {
     renderSetup(root, {
       config,
@@ -69,19 +71,19 @@ export function go(page) {
   } else if (page === "stale") {
     renderStale(root, { config, toast });
   } else if (page === "meetings") {
-    renderMeetings(root, config);
+    renderMeetings(root, config, gh);
   } else if (page === "standup") {
-    renderStandup(root, config);
+    renderStandup(root, config, gh);
   } else if (page === "projects") {
-    renderProjects(root, config);
+    renderProjects(root, config, gh);
   } else if (page === "decisions") {
-    renderDecisions(root, config);
+    renderDecisions(root, config, gh);
   } else if (page === "actions") {
-    renderActions(root, config);
+    renderActions(root, config, gh);
   } else if (page === "topics") {
-    renderTopics(root, config);
+    renderTopics(root, config, gh);
   } else if (page === "timeline") {
-    renderTimeline(root, config);
+    renderTimeline(root, config, gh);
   } else {
     renderLookup(root, { config, toast });
   }
