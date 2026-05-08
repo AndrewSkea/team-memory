@@ -64,7 +64,7 @@ export function renderDecisions(container, config, gh) {
     document.getElementById('dsave').disabled = true;
     document.getElementById('dsave').textContent = 'Saving…';
     try {
-      await gh.commitFile('DECISIONS.md', md, `feat: decision — ${title}`);
+      await gh.commitFile({ path: 'DECISIONS.md', append: md, message: `feat: decision — ${title}` });
       document.getElementById('dstatusmsg').innerHTML = '<p style="color:var(--success,green)">Saved to DECISIONS.md</p>';
       ['dtitle','dcontext','ddecision','dconsequences'].forEach(id => { document.getElementById(id).value = ''; });
     } catch (e) {

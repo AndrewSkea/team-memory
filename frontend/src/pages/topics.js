@@ -35,9 +35,9 @@ export function renderTopics(container, config, gh) {
     try {
       const f = await gh.getFile(path);
       if (f.exists) {
-        await gh.putContent(path, md, `feat: update topic — ${name}`);
+        await gh.putContent({ path, content: md, message: `feat: update topic — ${name}` });
       } else {
-        await gh.putContent(path, md, `feat: add topic — ${name}`);
+        await gh.putContent({ path, content: md, message: `feat: add topic — ${name}` });
       }
       document.getElementById('tstatus').innerHTML = `<p style="color:var(--success,green)">Saved to ${path}</p>`;
     } catch (e) {

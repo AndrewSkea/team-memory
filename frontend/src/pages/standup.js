@@ -50,7 +50,7 @@ export function renderStandup(container, config, gh) {
     document.getElementById('ssave').disabled = true;
     document.getElementById('ssave').textContent = 'Saving…';
     try {
-      await gh.commitFile('STANDUPS.md', md, `feat: standup ${document.getElementById('sdate').value}`);
+      await gh.commitFile({ path: 'STANDUPS.md', append: md, message: `feat: standup ${document.getElementById('sdate').value}` });
       document.getElementById('sstatus').innerHTML = '<p style="color:var(--success,green)">Saved to STANDUPS.md</p>';
       ['syesterday','stoday','sblockers'].forEach(id => { document.getElementById(id).value = ''; });
     } catch (e) {

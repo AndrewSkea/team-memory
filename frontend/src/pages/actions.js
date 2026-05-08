@@ -24,7 +24,7 @@ export function renderActions(container, config, gh) {
     let existingContent = '';
     try {
       const f = await gh.getFile('ACTIONS.md');
-      if (f.exists) existingContent = atob(f.content);
+      if (f.exists) existingContent = f.content;
     } catch {}
     render(existingContent);
   }
@@ -76,9 +76,9 @@ export function renderActions(container, config, gh) {
         cb.disabled = true;
         try {
           const f = await gh.getFile('ACTIONS.md');
-          const content = f.exists ? atob(f.content) : '';
+          const content = f.exists ? f.content : '';
           const newContent = toggleActionLine(content, line);
-          await gh.putContent('ACTIONS.md', newContent, `feat: toggle action`);
+          await gh.putContent({ path: 'ACTIONS.md', content: newContent, message: 'feat: toggle action' });
           load();
         } catch (e) {
           cb.checked = !cb.checked;
@@ -99,7 +99,7 @@ export function renderActions(container, config, gh) {
       document.getElementById('asave').disabled = true;
       document.getElementById('asave').textContent = 'Saving…';
       try {
-        await gh.commitFile('ACTIONS.md', md, `feat: add action — ${text.slice(0, 40)}`);
+        await gh.commitFile({ path: 'ACTIONS.md', append: md, message: `feat: add action — ${text.slice(0, 40)}` });
         load();
       } catch (e) {
         document.getElementById('astatus').innerHTML = `<p style="color:var(--error)">${e.message}</p>`;

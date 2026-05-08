@@ -68,7 +68,7 @@ export function renderProjects(container, config, gh) {
     document.getElementById('psave').disabled = true;
     document.getElementById('psave').textContent = 'Saving…';
     try {
-      await gh.commitFile('PROJECTS.md', md, `feat: add project — ${name}`);
+      await gh.commitFile({ path: 'PROJECTS.md', append: md, message: `feat: add project — ${name}` });
       document.getElementById('pstatusmsg').innerHTML = '<p style="color:var(--success,green)">Saved to PROJECTS.md</p>';
       ['pname','pgoal','pmilestones','pnotes'].forEach(id => { document.getElementById(id).value = ''; });
     } catch (e) {

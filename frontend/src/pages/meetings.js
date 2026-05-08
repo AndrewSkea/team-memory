@@ -56,7 +56,7 @@ export function renderMeetings(container, config, gh) {
     document.getElementById('msave').disabled = true;
     document.getElementById('msave').textContent = 'Saving…';
     try {
-      await gh.commitFile('MEETINGS.md', md, `feat: add meeting notes — ${title}`);
+      await gh.commitFile({ path: 'MEETINGS.md', append: md, message: `feat: add meeting notes — ${title}` });
       document.getElementById('mstatus').innerHTML = '<p style="color:var(--success,green)">Saved to MEETINGS.md</p>';
       ['mtitle','mattendees','mdecisions','mactions'].forEach(id => { document.getElementById(id).value = ''; });
     } catch (e) {
