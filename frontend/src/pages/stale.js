@@ -8,8 +8,10 @@ export function removeEntryFromContent(content, entryTitle) {
   const parts = content.split(/(?=### Entry:)/);
   const filtered = parts.filter(p => {
     if (!p.startsWith('### Entry:')) return true;
-    const titleMatch = p.match(/^### Entry:\s*(.+)/);
-    return !titleMatch || titleMatch[1].trim() !== entryTitle;
+    const headerMatch = p.match(/^### Entry:\s*\S+\s+—\s+(.+)/);
+    const fullMatch = p.match(/^### Entry:\s*(.+)/);
+    const extracted = headerMatch ? headerMatch[1].trim() : (fullMatch ? fullMatch[1].trim() : '');
+    return extracted !== entryTitle;
   });
   return filtered.join('');
 }
@@ -205,7 +207,8 @@ async function loadStale(gh, cache) {
       if (tsMatch) {
         const age = Math.floor((now - new Date(tsMatch[1]).getTime()) / (24 * 60 * 60 * 1000));
         if (age > STALE_DAYS) {
-          const title = headerLine.replace(/^### Entry:\s*/, "").replace(/\s*\|.*$/, "").trim();
+          const headerMatch = headerLine.match(/^### Entry:\s*(\S+)\s+—\s+(.+)/);
+          const title = headerMatch ? headerMatch[2].trim() : headerLine.replace(/^### Entry:\s*/, '').trim();
           stale.push({ title, file: entry.path, age, block });
         }
       }

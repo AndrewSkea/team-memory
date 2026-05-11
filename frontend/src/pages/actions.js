@@ -35,7 +35,7 @@ export function renderActions(container, config, gh) {
       ? '<p class="muted" style="text-align:center;padding:16px">No actions yet.</p>'
       : actions.map((a, i) => `
         <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border,#eee)">
-          <input type="checkbox" data-idx="${i}" data-line="${encodeURIComponent(a.line)}" ${a.done ? 'checked' : ''} style="accent-color:var(--primary,#c0541a)">
+          <input type="checkbox" data-idx="${i}" data-line="${encodeURIComponent(a.line)}" ${a.done ? 'checked' : ''} style="accent-color:var(--accent,#c84e1a)">
           <span style="${a.done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${a.text}</span>
         </div>`).join('');
 
