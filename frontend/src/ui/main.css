@@ -544,7 +544,7 @@ pre {
   transition: background 0.15s;
 }
 .tag-chip.active {
-  background: var(--primary, #c0541a);
+  background: var(--accent);
   color: #fff;
-  border-color: var(--primary, #c0541a);
+  border-color: var(--accent);
 }

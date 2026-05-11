@@ -4,17 +4,23 @@ import { extractEntries, sortByDate } from '../../frontend/src/pages/timeline.js
 
 describe('extractEntries', () => {
   it('extracts entries from file content', () => {
-    const content = `### Entry: Fix auth bug
-**Date:** 2026-05-06
+    const content = `### Entry: 2026-05-06T10:00:00.000Z — Fix auth bug
+**Scope:** backend
+**Type:** General
 **Tags:** auth;bug
+**Source:** UI
 **Summary:** Fixed timeout issue.
-- root cause was stale token
+**Bullets:** - root cause was stale token
+**Full:**
 
-### Entry: Setup CI
-**Date:** 2026-05-07
+### Entry: 2026-05-07T09:00:00.000Z — Setup CI
+**Scope:** general
+**Type:** General
 **Tags:** ci
+**Source:** UI
 **Summary:** Added GitHub Actions.
-- runs on push to master
+**Bullets:** - runs on push to master
+**Full:**
 `;
     const entries = extractEntries(content, 'GENERAL.md');
     assert.equal(entries.length, 2);

@@ -3,14 +3,17 @@ export function extractEntries(content, source) {
   return blocks
     .filter(b => b.startsWith('### Entry:'))
     .map(b => {
-      const titleMatch = b.match(/^### Entry:\s*(.+)/);
-      const dateMatch = b.match(/\*\*Date:\*\*\s*(\d{4}-\d{2}-\d{2})/);
+      const headerMatch = b.match(/^### Entry:\s*(\S+)\s+—\s+(.+)/);
       const summaryMatch = b.match(/\*\*Summary:\*\*\s*(.+)/);
       const tagsMatch = b.match(/\*\*Tags:\*\*\s*(.+)/);
-      if (!titleMatch || !dateMatch) return null;
+      if (!headerMatch) return null;
+      const timestamp = headerMatch[1];
+      const title = headerMatch[2].trim();
+      const date = timestamp.slice(0, 10); // 'YYYY-MM-DD'
+      if (!/^\d{4}-\d{2}-\d{2}/.test(date)) return null;
       return {
-        title: titleMatch[1].trim(),
-        date: dateMatch[1],
+        title,
+        date,
         summary: summaryMatch ? summaryMatch[1].trim() : '',
         tags: tagsMatch ? tagsMatch[1].trim().split(';').filter(Boolean) : [],
         source,
@@ -62,7 +65,7 @@ export function renderTimeline(container, config, gh) {
           dateHeader = `<p class="section-label" style="margin:16px 0 8px">${e.date}</p>`;
         }
         const tags = e.tags.map(t =>
-          `<span style="font-size:11px;background:var(--bg-alt,#f5ede6);padding:2px 7px;border-radius:10px;color:var(--primary,#c0541a)">${t}</span>`
+          `<span style="font-size:11px;background:var(--bg-alt,#f5ede6);padding:2px 7px;border-radius:10px;color:var(--accent,#c84e1a)">${t}</span>`
         ).join(' ');
         return `${dateHeader}
           <div style="padding:12px;border:1px solid var(--border,#e8ddd4);border-radius:8px;margin-bottom:8px">
