@@ -3,6 +3,17 @@ import { Cache } from "../services/cache.js";
 import { parseIndex } from "../services/indexmd.js";
 import { incrementLookups } from "../services/stats.js";
 
+export function extractTagsFromIndex(indexContent) {
+  const matches = [...indexContent.matchAll(/\*\*Tags:\*\*\s*([^\n]+)/g)];
+  const all = matches.flatMap(m => m[1].trim().split(';').map(t => t.trim()).filter(Boolean));
+  return [...new Set(all)].sort();
+}
+
+export function filterByTag(entries, tag) {
+  if (!tag) return entries;
+  return entries.filter(e => e.tags && e.tags.includes(tag));
+}
+
 export function renderLookup(root, { config, toast }) {
   const gh = new GitHubClient({ token: config.token, owner: config.owner, repo: config.repo });
   const cache = new Cache("team-memory");
@@ -10,6 +21,7 @@ export function renderLookup(root, { config, toast }) {
   root.innerHTML = `
     <div class="card">
       <div class="section-label">Search memory bank</div>
+      <div id="tag-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
       <div class="search-wrap">
         <svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4.5"/><line x1="10.5" y1="10.5" x2="14" y2="14"/></svg>
         <input id="q" class="search-input" type="text" placeholder="Keywords across files and entry headers…" autocomplete="off" />
@@ -20,15 +32,46 @@ export function renderLookup(root, { config, toast }) {
 
   const $ = s => root.querySelector(s);
   let timer;
+  let activeTag = null;
+
+  // Load index for tag chips
+  (async () => {
+    try {
+      let idxFile = await cache.get("file:INDEX.md");
+      if (!idxFile) {
+        idxFile = await gh.getFile("INDEX.md");
+        await cache.set("file:INDEX.md", idxFile);
+      }
+      if (idxFile && idxFile.exists) {
+        const tags = extractTagsFromIndex(idxFile.content);
+        const chipBar = $("#tag-chips");
+        if (chipBar && tags.length > 0) {
+          chipBar.innerHTML = tags.map(t =>
+            `<button class="tag-chip" data-tag="${t}">${t}</button>`
+          ).join('');
+          chipBar.querySelectorAll('.tag-chip').forEach(btn => {
+            btn.onclick = () => {
+              activeTag = activeTag === btn.dataset.tag ? null : btn.dataset.tag;
+              chipBar.querySelectorAll('.tag-chip').forEach(b =>
+                b.classList.toggle('active', b.dataset.tag === activeTag));
+              // Re-run search with current query + active tag filter
+              doSearch($("#q").value, $("#results"), gh, cache, config, toast, activeTag);
+            };
+          });
+        }
+      }
+    } catch {}
+  })();
+
   $("#q").oninput = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => doSearch($("#q").value, $("#results"), gh, cache, config, toast), 200);
+    timer = setTimeout(() => doSearch($("#q").value, $("#results"), gh, cache, config, toast, activeTag), 200);
   };
 }
 
-async function doSearch(query, out, gh, cache, config, toast) {
+async function doSearch(query, out, gh, cache, config, toast, activeTag = null) {
   query = query.trim().toLowerCase();
-  if (!query) { out.innerHTML = ""; return; }
+  if (!query && !activeTag) { out.innerHTML = ""; return; }
   incrementLookups();
   try {
     let idxFile = await cache.get("file:INDEX.md");
@@ -37,19 +80,29 @@ async function doSearch(query, out, gh, cache, config, toast) {
       await cache.set("file:INDEX.md", idxFile);
     }
     const idx = parseIndex(idxFile.content);
-    const fileHits = idx.entries.filter(e =>
-      e.path.toLowerCase().includes(query) || e.topics.toLowerCase().includes(query)
+    let fileHits = idx.entries.filter(e =>
+      !query || e.path.toLowerCase().includes(query) || e.topics.toLowerCase().includes(query)
     );
     const entryHits = [];
     for (const e of fileHits.slice(0, 5)) {
       const cached = await cache.get("file:" + e.path) ?? await fetchAndCache(gh, cache, e.path);
-      cached.content.split(/\r?\n/).forEach((l, i) => {
-        if (l.startsWith("### Entry:") && l.toLowerCase().includes(query)) {
-          entryHits.push({ path: e.path, header: l, line: i });
+      const lines = cached.content.split(/\r?\n/);
+      // Parse entries with their tags for filtering
+      let currentEntry = null;
+      lines.forEach((l, i) => {
+        if (l.startsWith("### Entry:")) {
+          currentEntry = { path: e.path, header: l, line: i, tags: [] };
+          if (!query || l.toLowerCase().includes(query)) {
+            entryHits.push(currentEntry);
+          }
+        } else if (currentEntry && l.startsWith("**Tags:**")) {
+          const tagsStr = l.replace("**Tags:**", "").trim();
+          currentEntry.tags = tagsStr.split(";").map(t => t.trim()).filter(Boolean);
         }
       });
     }
-    out.innerHTML = renderResults(config, fileHits, entryHits);
+    const filtered = filterByTag(entryHits, activeTag);
+    out.innerHTML = renderResults(config, fileHits, filtered);
   } catch (e) {
     toast("Lookup failed: " + e.message, true);
   }

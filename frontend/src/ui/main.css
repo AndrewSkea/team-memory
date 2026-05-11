@@ -75,11 +75,16 @@ html, body {
   border-radius: var(--radius);
   padding: 0 6px;
   display: flex;
+  overflow-x: auto;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
   box-shadow: 0 2px 12px rgba(45,42,38,0.08), 0 1px 3px rgba(45,42,38,0.04);
 }
+.nav-card::-webkit-scrollbar { display: none; }
 
 .nav-btn {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -525,4 +530,21 @@ pre {
   font-size: 12px;
   overflow-x: auto;
   color: var(--text-2);
+}
+
+/* ── Tag chips ── */
+.tag-chip {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border, #e8ddd4);
+  background: var(--bg, #fff);
+  color: var(--text, #1a1a1a);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.tag-chip.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
