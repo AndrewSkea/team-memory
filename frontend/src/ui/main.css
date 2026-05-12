@@ -310,6 +310,24 @@ select:focus { border-color: var(--accent); }
   stroke-linejoin: round;
 }
 
+/* ── Template row ── */
+.template-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.template-row label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.template-row select {
+  width: auto;
+  font-size: 12px;
+  padding: 5px 28px 5px 8px;
+}
+
 /* ── Footer ── */
 .footer {
   text-align: center;
