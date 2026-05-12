@@ -1,3 +1,5 @@
+import { parseMsgFile } from '../services/msgparser.js';
+
 export const MEETING_TEMPLATES = [
   { name: 'Blank',            fill: { title: '',                     decisions: '',                                      actions: '' } },
   { name: 'Sprint Planning',  fill: { title: 'Sprint Planning',      decisions: 'Sprint goal: \nSelected items: ',       actions: 'Scrum master: \nTeam: ' } },
@@ -32,6 +34,11 @@ export function renderMeetings(container, config, gh) {
   const today = new Date().toISOString().slice(0, 10);
   container.innerHTML = `
     <div class="card">
+      <div class="drop-zone" id="mdrop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" style="display:block;margin:0 auto 6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Drop an Outlook invite (.msg) or click to browse
+        <input type="file" accept=".msg" id="mfile">
+      </div>
       <div class="template-row">
         <label for="mtmpl">Template</label>
         <select id="mtmpl">
@@ -67,6 +74,33 @@ export function renderMeetings(container, config, gh) {
     document.getElementById('mdecisions').value = f.decisions;
     document.getElementById('mactions').value   = f.actions;
   });
+
+  function handleMsgFile(file) {
+    if (!file || !file.name.endsWith('.msg')) return;
+    file.arrayBuffer().then(buf => {
+      try {
+        const { subject, date, displayTo, displayCc, body } = parseMsgFile(buf);
+        if (subject) document.getElementById('mtitle').value = subject;
+        if (date) document.getElementById('mdate').value = date.toISOString().slice(0, 10);
+        const attendees = [displayTo, displayCc].filter(Boolean).join(', ');
+        if (attendees) document.getElementById('mattendees').value = attendees;
+        if (body) document.getElementById('mdecisions').value = body.trim();
+        document.getElementById('mstatus').innerHTML = '<p style="color:var(--green)">Populated from .msg file — review and edit before saving</p>';
+      } catch {
+        document.getElementById('mstatus').innerHTML = '<p style="color:var(--danger)">Could not parse .msg file</p>';
+      }
+    });
+  }
+
+  const drop = document.getElementById('mdrop');
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('drag-over');
+    handleMsgFile(e.dataTransfer.files[0]);
+  });
+  document.getElementById('mfile').addEventListener('change', e => handleMsgFile(e.target.files[0]));
 
   document.getElementById('msave').onclick = async () => {
     const title = document.getElementById('mtitle').value.trim();
