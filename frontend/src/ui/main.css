@@ -132,27 +132,6 @@ html, body {
   gap: 16px;
 }
 
-/* ── User row ── */
-.user-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--inner);
-  border-radius: var(--radius-sm);
-}
-
-.user-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--green);
-  flex-shrink: 0;
-}
-
-.user-details { display: flex; flex-direction: column; min-width: 0; }
-.user-name { font-size: 13px; font-weight: 600; line-height: 1.3; }
-.user-repo { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── Section label ── */
 .section-label {

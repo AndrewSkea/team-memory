@@ -34,7 +34,7 @@ function updateFooter(config) {
   if (config.owner && config.repo) {
     footer.innerHTML = `<span class="footer-dot connected"></span>${config.owner} · ${config.owner}/${config.repo}`;
   } else {
-    footer.innerHTML = `<span class="footer-dot"></span><button id="forget-auth-footer" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;">Forget auth</button>`;
+    footer.innerHTML = `<span class="footer-dot"></span><button id="forget-auth-footer" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:0;line-height:1;vertical-align:middle;">Forget auth</button>`;
     document.getElementById("forget-auth-footer")?.addEventListener("click", forgetAuth);
   }
 }
