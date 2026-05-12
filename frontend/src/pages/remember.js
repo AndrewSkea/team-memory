@@ -11,19 +11,8 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
   const gh = new GitHubClient({ token: config.token, owner: config.owner, repo: config.repo });
   const cache = new Cache("team-memory");
 
-  const repoDisplay = config.owner && config.repo ? `${config.owner}/${config.repo}` : "not configured";
-
   root.innerHTML = `
     <div class="card">
-      <div class="user-row">
-        <div class="user-dot"></div>
-        <div class="user-details">
-          <span class="user-name">${config.owner || "—"}</span>
-          <span class="user-repo">${repoDisplay}</span>
-        </div>
-        <button id="forget-btn" title="Forget auth" style="background:none;border:none;cursor:pointer;margin-left:auto;padding:4px;color:var(--muted);font-size:12px;">✕</button>
-      </div>
-
       <div class="section-label">What would you like to add to the memory bank?</div>
 
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
@@ -75,8 +64,6 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
   `;
 
   const $ = sel => root.querySelector(sel);
-
-  $("#forget-btn").onclick = forgetAuth;
 
   const tmplSelect = $("#tmpl-select");
   const textArea = $("#text");

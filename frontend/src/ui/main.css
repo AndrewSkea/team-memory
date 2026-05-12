@@ -339,6 +339,19 @@ select:focus { border-color: var(--accent); }
   padding-top: 4px;
 }
 
+.footer-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  margin-right: 6px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+.footer-dot.connected { background: var(--green); }
+
 /* ── Toast ── */
 .toast {
   position: fixed;
