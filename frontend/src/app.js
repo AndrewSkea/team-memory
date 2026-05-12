@@ -4,7 +4,6 @@ import { renderLookup } from "./pages/lookup.js";
 import { renderStats } from "./pages/stats.js";
 import { renderStale } from "./pages/stale.js";
 import { renderMeetings } from './pages/meetings.js';
-import { renderStandup } from './pages/standup.js';
 import { renderProjects } from './pages/projects.js';
 import { renderDecisions } from './pages/decisions.js';
 import { renderActions } from './pages/actions.js';
@@ -72,8 +71,6 @@ export function go(page) {
     renderStale(root, { config, toast });
   } else if (page === "meetings") {
     renderMeetings(root, config, gh);
-  } else if (page === "standup") {
-    renderStandup(root, config, gh);
   } else if (page === "projects") {
     renderProjects(root, config, gh);
   } else if (page === "decisions") {
