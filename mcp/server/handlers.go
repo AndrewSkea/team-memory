@@ -18,6 +18,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/categorize", s.handleCategorize)
 	s.mux.HandleFunc("/v1/summarize", s.handleSummarize)
 	s.mux.HandleFunc("/v1/export-config", s.handleExportConfig)
+	s.mux.HandleFunc("/v1/reminder", s.handleReminder)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -95,6 +96,40 @@ func (s *Server) handleSummarize(w http.ResponseWriter, r *http.Request) {
 	payloadJSON, _ := json.Marshal(req)
 	prompt := prompts.Summarize + "\n\nINPUT:\n" + string(payloadJSON)
 
+	if s.cfg.Runner == nil {
+		writeErr(w, http.StatusServiceUnavailable, "no LLM runner configured")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	out, err := s.cfg.Runner.Run(ctx, prompt)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprint(w, stripFences(out))
+}
+
+type reminderReq struct {
+	Title   string `json:"title"`
+	DueDate string `json:"due_date"`
+	Details string `json:"details"`
+}
+
+func (s *Server) handleReminder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "POST only")
+		return
+	}
+	var req reminderReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	payloadJSON, _ := json.Marshal(req)
+	prompt := prompts.Reminder + "\n\nINPUT:\n" + string(payloadJSON)
 	if s.cfg.Runner == nil {
 		writeErr(w, http.StatusServiceUnavailable, "no LLM runner configured")
 		return

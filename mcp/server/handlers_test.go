@@ -107,6 +107,25 @@ func TestGetConfig_Missing(t *testing.T) {
 	}
 }
 
+func TestHandleReminder(t *testing.T) {
+	runner := &fakeRunner{out: `{"short_title":"Submit report","bullets":["Review submissions"],"tags":"deadline"}`}
+	srv := New(Config{Runner: runner})
+	body := `{"title":"Submit report","due_date":"2026-05-20","details":"See email from boss"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/reminder", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if out["short_title"] != "Submit report" {
+		t.Errorf("unexpected short_title: %v", out["short_title"])
+	}
+}
+
 func TestExportConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
