@@ -9,6 +9,7 @@ import { renderDecisions } from './pages/decisions.js';
 import { renderActions } from './pages/actions.js';
 import { renderTopics } from './pages/topics.js';
 import { renderTimeline } from './pages/timeline.js';
+import { renderReminders } from './pages/reminders.js';
 import { GitHubClient } from './services/github.js';
 
 const CONFIG_KEY = "team-memory:config";
@@ -77,6 +78,8 @@ export function go(page) {
     renderDecisions(root, config, gh);
   } else if (page === "actions") {
     renderActions(root, config, gh);
+  } else if (page === "reminders") {
+    renderReminders(root, config, gh);
   } else if (page === "topics") {
     renderTopics(root, config, gh);
   } else if (page === "timeline") {

@@ -353,6 +353,66 @@ select:focus { border-color: var(--accent); }
   cursor: pointer;
 }
 
+.tab-row {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1.5px solid var(--border);
+  margin-bottom: 4px;
+}
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  padding: 8px 14px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  margin-bottom: -1.5px;
+  transition: color 0.12s, border-color 0.12s;
+}
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.tab-btn:hover:not(.active) { color: var(--text); }
+
+.reminder-group { display: flex; flex-direction: column; gap: 6px; }
+.reminder-group + .reminder-group { margin-top: 16px; }
+
+.reminder-item {
+  padding: 11px 14px;
+  background: var(--inner);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.reminder-item.overdue { border-left: 3px solid var(--danger); }
+
+.reminder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.reminder-title { font-size: 13px; font-weight: 600; }
+.reminder-due   { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.reminder-due.overdue { color: var(--danger); font-weight: 600; }
+.reminder-preview { font-size: 12px; color: var(--text-2); }
+.reminder-done-btn {
+  align-self: flex-start;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+  margin-top: 4px;
+}
+.reminder-done-btn:hover { border-color: var(--green); color: var(--green); }
+
 /* ── Footer ── */
 .footer {
   text-align: center;
