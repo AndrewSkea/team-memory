@@ -155,17 +155,16 @@ export function renderReminders(root, config, gh) {
       const file = await gh.getFile(FILE(config.owner));
       const items = parseReminders(file?.content ?? '');
       const now = new Date();
-      const weekAhead = new Date(now.getTime() + 7 * 86400000);
+      const todayStr    = now.toISOString().slice(0, 10);
+      const weekAheadStr = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
 
-      function dateOf(s) { return s ? new Date(s + 'T00:00:00') : null; }
-
-      const overdue   = items.filter(r => !r.done && dateOf(r.dueDate) < now);
-      const thisWeek  = items.filter(r => !r.done && dateOf(r.dueDate) >= now && dateOf(r.dueDate) <= weekAhead);
-      const upcoming  = items.filter(r => !r.done && dateOf(r.dueDate) > weekAhead);
+      const overdue   = items.filter(r => !r.done && r.dueDate < todayStr);
+      const thisWeek  = items.filter(r => !r.done && r.dueDate >= todayStr && r.dueDate <= weekAheadStr);
+      const upcoming  = items.filter(r => !r.done && r.dueDate > weekAheadStr);
       const done      = items.filter(r => r.done);
 
       function renderItem(r) {
-        const isOverdue = dateOf(r.dueDate) < now && !r.done;
+        const isOverdue = !r.done && r.dueDate < todayStr;
         return `<div class="reminder-item${isOverdue ? ' overdue' : ''}">
           <div class="reminder-header">
             <span class="reminder-title">${r.title}</span>
