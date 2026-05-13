@@ -18,18 +18,18 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
 
   root.innerHTML = `
     <div class="card">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-        <label style="font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap">Type</label>
-        <select id="type" class="search-input" style="flex:0 0 auto;width:auto">${TYPES.map(t => `<option>${t}</option>`).join('')}</select>
-        <div id="scope-wrap" style="display:flex;align-items:center;gap:8px;margin-left:auto">
-          <label style="font-size:12px;font-weight:600;color:var(--muted)">Scope</label>
-          <select id="scope" class="search-input" style="width:auto"><option>auto</option><option>Team</option><option>Personal</option></select>
+      <div class="type-row">
+        <span class="row-label">Type</span>
+        <select id="type">${TYPES.map(t => `<option>${t}</option>`).join('')}</select>
+        <div id="scope-wrap" class="scope-group">
+          <span class="row-label">Scope</span>
+          <select id="scope"><option>auto</option><option>Team</option><option>Personal</option></select>
         </div>
       </div>
 
-      <div id="section-general">
+      <div id="section-general" style="display:flex;flex-direction:column;gap:10px">
         <textarea id="text" placeholder="Describe a useful pattern, a gotcha, a workflow tip, or anything worth sharing with your team…"></textarea>
-        <label class="checkbox-row" style="margin-top:8px">
+        <label class="checkbox-row">
           <input type="checkbox" id="unsure">
           Not sure — park this in UNSURE.md for later
         </label>
@@ -40,60 +40,78 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
         </label>
       </div>
 
-      <div id="section-decision" style="display:none">
-        <p class="section-label">Title</p>
-        <input id="dtitle" class="search-input" type="text" placeholder="Use JWT for auth" style="width:100%;box-sizing:border-box;margin-bottom:10px">
+      <div id="section-decision" style="display:none;flex-direction:column;gap:10px">
+        <div>
+          <p class="section-label">Title</p>
+          <input id="dtitle" class="search-input" type="text" placeholder="Use JWT for auth" style="width:100%">
+        </div>
         <div class="fields-row">
           <div>
             <p class="section-label">Date</p>
-            <input id="ddate" class="search-input" type="date" value="${today}" style="width:100%;box-sizing:border-box">
+            <input id="ddate" class="search-input" type="date" value="${today}" style="width:100%">
           </div>
           <div>
             <p class="section-label">Status</p>
-            <select id="dstatus" class="search-input" style="width:100%;box-sizing:border-box">
+            <select id="dstatus">
               <option>Proposed</option><option>Accepted</option><option>Deprecated</option><option>Superseded</option>
             </select>
           </div>
         </div>
-        <p class="section-label" style="margin-top:10px">Context — why is this needed?</p>
-        <textarea id="dcontext" class="textarea" placeholder="What problem are we solving?"></textarea>
-        <p class="section-label">Decision — what did we decide?</p>
-        <textarea id="ddecision" class="textarea" placeholder="We will…"></textarea>
-        <p class="section-label">Consequences (one per line)</p>
-        <textarea id="dconsequences" class="textarea" style="min-height:80px" placeholder="Clients must handle X"></textarea>
+        <div>
+          <p class="section-label">Context — why is this needed?</p>
+          <textarea id="dcontext" style="min-height:80px" placeholder="What problem are we solving?"></textarea>
+        </div>
+        <div>
+          <p class="section-label">Decision — what did we decide?</p>
+          <textarea id="ddecision" style="min-height:80px" placeholder="We will…"></textarea>
+        </div>
+        <div>
+          <p class="section-label">Consequences <span style="font-weight:400;color:var(--muted)">(one per line)</span></p>
+          <textarea id="dconsequences" style="min-height:70px" placeholder="Clients must handle X"></textarea>
+        </div>
       </div>
 
-      <div id="section-action" style="display:none">
-        <p class="section-label">What needs to be done?</p>
-        <input id="atext" class="search-input" type="text" placeholder="Update deployment docs" style="width:100%;box-sizing:border-box;margin-bottom:10px">
+      <div id="section-action" style="display:none;flex-direction:column;gap:10px">
+        <div>
+          <p class="section-label">What needs to be done?</p>
+          <input id="atext" class="search-input" type="text" placeholder="Update deployment docs" style="width:100%">
+        </div>
         <div class="fields-row">
           <div>
             <p class="section-label">Priority</p>
-            <select id="apriority" class="search-input" style="width:100%;box-sizing:border-box">
+            <select id="apriority">
               <option>HIGH</option><option selected>MEDIUM</option><option>LOW</option>
             </select>
           </div>
           <div>
-            <p class="section-label">Owner (optional)</p>
-            <input id="aowner" class="search-input" type="text" placeholder="Alice" style="width:100%;box-sizing:border-box">
+            <p class="section-label">Owner <span style="font-weight:400;color:var(--muted)">(optional)</span></p>
+            <input id="aowner" class="search-input" type="text" placeholder="Alice" style="width:100%">
           </div>
         </div>
-        <p class="section-label" style="margin-top:10px">Due date (optional)</p>
-        <input id="adue" class="search-input" type="date" style="width:200px">
+        <div>
+          <p class="section-label">Due date <span style="font-weight:400;color:var(--muted)">(optional)</span></p>
+          <input id="adue" class="search-input" type="date" style="width:180px">
+        </div>
       </div>
 
-      <div id="section-reminder" style="display:none">
+      <div id="section-reminder" style="display:none;flex-direction:column;gap:10px">
         <div class="drop-zone" id="rdrop">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" style="display:block;margin:0 auto 6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Drop an email (.msg) to auto-fill, or fill in manually
           <input type="file" accept=".msg" id="rfile">
         </div>
-        <p class="section-label">What do you need to do?</p>
-        <input id="rtitle" class="search-input" type="text" placeholder="Submit Q2 report" style="width:100%;box-sizing:border-box;margin-bottom:10px">
-        <p class="section-label">Due date</p>
-        <input id="rdate" class="search-input" type="date" value="${today}" style="width:100%;box-sizing:border-box;margin-bottom:10px">
-        <p class="section-label">Details <span style="color:var(--muted);font-weight:400">(optional)</span></p>
-        <textarea id="rdetails" class="textarea" placeholder="Context, links, notes…" style="min-height:80px"></textarea>
+        <div>
+          <p class="section-label">What do you need to do?</p>
+          <input id="rtitle" class="search-input" type="text" placeholder="Submit Q2 report" style="width:100%">
+        </div>
+        <div>
+          <p class="section-label">Due date</p>
+          <input id="rdate" class="search-input" type="date" value="${today}" style="width:100%">
+        </div>
+        <div>
+          <p class="section-label">Details <span style="font-weight:400;color:var(--muted)">(optional)</span></p>
+          <textarea id="rdetails" style="min-height:80px" placeholder="Context, links, notes…"></textarea>
+        </div>
       </div>
 
       <div class="divider"></div>
@@ -118,10 +136,10 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
   function onTypeChange() {
     const type = $("#type").value;
     const isSpecial = SPECIAL.has(type);
-    $("#section-general").style.display   = isSpecial ? 'none' : '';
-    $("#section-decision").style.display  = type === 'Decision' ? '' : 'none';
-    $("#section-action").style.display    = type === 'Action'   ? '' : 'none';
-    $("#section-reminder").style.display  = type === 'Reminder' ? '' : 'none';
+    $("#section-general").style.display   = isSpecial ? 'none' : 'flex';
+    $("#section-decision").style.display  = type === 'Decision' ? 'flex' : 'none';
+    $("#section-action").style.display    = type === 'Action'   ? 'flex' : 'none';
+    $("#section-reminder").style.display  = type === 'Reminder' ? 'flex' : 'none';
     $("#scope-wrap").style.display        = isSpecial ? 'none' : '';
     $("#raw").style.display               = isSpecial ? 'none' : '';
     const labels = { Decision: 'Save decision', Action: 'Add action', Reminder: 'Save reminder' };
