@@ -1,0 +1,47 @@
+name: Auto Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  tag-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump patch version and push tag
+        id: tag
+        run: |
+          latest=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          if [ -z "$latest" ]; then
+            latest="v0.0.0"
+          fi
+          major=$(echo "$latest" | cut -d. -f1 | tr -d v)
+          minor=$(echo "$latest" | cut -d. -f2)
+          patch=$(echo "$latest" | cut -d. -f3)
+          new_tag="v${major}.${minor}.$((patch + 1))"
+          echo "new_tag=$new_tag" >> "$GITHUB_OUTPUT"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$new_tag"
+          git push origin "$new_tag"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mcp/go.mod
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
