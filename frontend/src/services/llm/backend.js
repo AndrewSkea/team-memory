@@ -10,9 +10,9 @@ async function loadPrompt(name) {
   return _promptCache[name];
 }
 
-export async function pickBackend({ anthropicKey, mcpUrl }) {
+export async function pickBackend({ anthropicKey }) {
   if (anthropicKey) return new AnthropicDirect({ apiKey: anthropicKey, loadPrompt });
-  const mcp = new LocalMCP({ url: mcpUrl, loadPrompt });
+  const mcp = new LocalMCP({ loadPrompt });
   if (await mcp.healthy()) return mcp;
   return null;
 }

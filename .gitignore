@@ -1,6 +1,19 @@
 # Secrets
 .env
 .env.*
+*.exe
+*.exe~
+
+# Temp / local
+design-*.html
+
+# Internal planning docs
+docs/
+*/team-memory-mcp
+*/team-memory-mcp~
+playwright-report/
+test-results/
+
 
 # Node
 node_modules/

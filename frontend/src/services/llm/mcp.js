@@ -1,5 +1,5 @@
 export class LocalMCP {
-  constructor({ url = "http://127.0.0.1:7438", loadPrompt, fetch: f = globalThis.fetch }) {
+  constructor({ url = "", loadPrompt, fetch: f = globalThis.fetch }) {
     this.url = url;
     this.loadPrompt = loadPrompt;
     this.fetch = (...args) => f(...args);
@@ -30,6 +30,17 @@ export class LocalMCP {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filename, text }),
+    });
+    if (!r.ok) throw new Error(`mcp ${r.status}: ${await r.text().catch(() => "")}`);
+    const t = await r.text();
+    try { return JSON.parse(t); } catch { throw new Error("mcp returned non-JSON: " + t.slice(0, 200)); }
+  }
+
+  async formatReminder({ title, dueDate, details }) {
+    const r = await this.fetch(`${this.url}/v1/reminder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, due_date: dueDate, details }),
     });
     if (!r.ok) throw new Error(`mcp ${r.status}: ${await r.text().catch(() => "")}`);
     const t = await r.text();

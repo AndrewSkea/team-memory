@@ -10,22 +10,11 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
   const gh = new GitHubClient({ token: config.token, owner: config.owner, repo: config.repo });
   const cache = new Cache("team-memory");
 
-  const repoDisplay = config.owner && config.repo ? `${config.owner}/${config.repo}` : "not configured";
-
   root.innerHTML = `
     <div class="card">
-      <div class="user-row">
-        <div class="user-dot"></div>
-        <div class="user-details">
-          <span class="user-name">${config.owner || "—"}</span>
-          <span class="user-repo">${repoDisplay}</span>
-        </div>
-        <button id="forget-btn" title="Forget auth" style="background:none;border:none;cursor:pointer;margin-left:auto;padding:4px;color:var(--muted);font-size:12px;">✕</button>
-      </div>
-
       <div class="section-label">What would you like to add to the memory bank?</div>
 
-      <textarea id="text" placeholder="Describe a useful pattern, a gotcha, a workflow tip, or anything worth sharing with your team…"></textarea>
+<textarea id="text" placeholder="Describe a useful pattern, a gotcha, a workflow tip, or anything worth sharing with your team…"></textarea>
 
       <div class="fields-row">
         <div class="field">
@@ -43,14 +32,16 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
         Not sure — park this in UNSURE.md for later
       </label>
 
+      <div class="divider"></div>
+
       <div class="button-row">
         <button class="btn-primary" id="save">
-          <svg viewBox="0 0 16 16"><path d="M2 2h9l3 3v9H2V2z"/><rect x="4" y="9" width="8" height="5" rx="1"/><rect x="4" y="2" width="6" height="4" rx="1"/></svg>
+          <svg viewBox="0 0 16 16"><path d="M14 2H9l-7 7 5 5 7-7V2z"/><circle cx="12" cy="4" r="1.2" fill="currentColor" stroke="none"/></svg>
           Save to memory
         </button>
-        <button class="btn-outline" id="auto">
-          <svg viewBox="0 0 16 16"><path d="M14 2H9l-7 7 5 5 7-7V2z"/><circle cx="12" cy="4" r="1.2" fill="currentColor" stroke="none"/></svg>
-          Auto-tag
+        <button class="btn-outline" id="raw">
+          <svg viewBox="0 0 16 16"><path d="M2 2h9l3 3v9H2V2z"/><rect x="4" y="9" width="8" height="5" rx="1"/><rect x="4" y="2" width="6" height="4" rx="1"/></svg>
+          Save without classification
         </button>
       </div>
 
@@ -66,7 +57,7 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
 
   const $ = sel => root.querySelector(sel);
 
-  $("#forget-btn").onclick = forgetAuth;
+  const textArea = $("#text");
 
   $("#unsure").onchange = () => {
     if ($("#unsure").checked) $("#type").value = "Unsure";
@@ -84,99 +75,100 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
     $("#text").value = await f.text();
   };
 
-  $("#auto").onclick = async () => {
-    const btn = $("#auto");
+  const SAVE_ICON = `<svg viewBox="0 0 16 16"><path d="M14 2H9l-7 7 5 5 7-7V2z"/><circle cx="12" cy="4" r="1.2" fill="currentColor" stroke="none"/></svg>`;
+  const RAW_ICON  = `<svg viewBox="0 0 16 16"><path d="M2 2h9l3 3v9H2V2z"/><rect x="4" y="9" width="8" height="5" rx="1"/><rect x="4" y="2" width="6" height="4" rx="1"/></svg>`;
+
+  async function commitEntry(preset) {
+    const text = $("#text").value.trim();
+    if (!text) { toast("Empty memory.", true); return false; }
+    const type = $("#type").value;
+    const scope = resolveScope($("#scope").value, config.owner);
+    const useUnsure = $("#unsure").checked || type === "Unsure" || preset?.unsure;
+    const target = preset?.target_file ?? (useUnsure ? "UNSURE.md" : "GENERAL.md");
+    const entry = {
+      timestamp: new Date().toISOString(),
+      shortTitle: preset?.short_title ?? text.split("\n")[0].slice(0, 60),
+      scope, type,
+      tags: preset?.tags ?? "",
+      source: "UI",
+      summary: preset?.one_sentence_summary ?? "",
+      bullets: preset?.bullets ?? [],
+      full: text,
+    };
+    const res = await gh.commitFile({ path: target, append: "\n" + renderEntry(entry), message: `team-memory: add entry to ${target}` });
+    if (!res.ok) {
+      if (res.kind === "conflict") toast("File changed on GitHub — try again.", true);
+      else if (res.kind === "auth") toast("Auth failed — check your PAT.", true);
+      else toast(`Save failed (${res.kind}): ${res.message ?? ""}`, true);
+      return false;
+    }
+    const idxFile = await getIndex(gh, cache, true);
+    const idx = parseIndex(idxFile.content);
+    if (!idx.entries.find(e => e.path === target)) {
+      const scopeStr = target.startsWith("users/") ? `personal:${config.owner}` : "shared";
+      upsertEntry(idx, { path: target, scope: scopeStr, topics: preset?.tags ?? type.toLowerCase() });
+      await gh.putContent({ path: "INDEX.md", content: serializeIndex(idx), message: "team-memory: update INDEX.md" });
+    }
+    await cache.delete("file:" + target);
+    await cache.delete("file:INDEX.md");
+    $("#text").value = "";
+    $("#preview").innerHTML = "";
+    toast(`Saved to ${target}.`);
+    return true;
+  }
+
+  // Primary: categorize then save
+  $("#save").onclick = async () => {
     const saveBtn = $("#save");
+    const rawBtn  = $("#raw");
+    const text = $("#text").value.trim();
+    if (!text) { toast("Type or attach some text first.", true); return; }
+    saveBtn.disabled = true;
+    rawBtn.disabled  = true;
+    saveBtn.innerHTML = `${SAVE_ICON} Classifying…`;
     try {
-      const text = $("#text").value.trim();
-      if (!text) { toast("Type or attach some text first.", true); return; }
-      btn.textContent = "Tagging…";
-      btn.disabled = true;
-      saveBtn.disabled = true;
-      const backend = await pickBackend({ anthropicKey: config.anthropicKey, mcpUrl: "http://127.0.0.1:7438" });
-      if (!backend) { toast("No LLM available — configure an Anthropic key or start MCP.", true); return; }
+      const backend = await pickBackend({ anthropicKey: config.anthropicKey });
+      if (!backend) { toast("No LLM available — add an Anthropic key in Setup or ensure the binary is running.", true); return; }
       const indexFile = await getIndex(gh, cache);
       const scope = resolveScope($("#scope").value, config.owner);
-      const result = await backend.categorize({
+      saveBtn.innerHTML = `${SAVE_ICON} Saving…`;
+      const preset = await backend.categorize({
         index: indexFile.content,
         payload: { scope, type: $("#type").value, text, source: "UI", timestamp: new Date().toISOString() },
       });
-      $("#save").dataset.preset = JSON.stringify(result);
-      const unsure = result.unsure;
-      $("#preview").innerHTML = `
-        <div class="preview-block">
-          <div class="preview-title">${result.short_title}</div>
-          <div class="preview-summary">${result.one_sentence_summary}</div>
-          <div class="muted" style="font-size:12px;margin-bottom:6px;">tags: ${result.tags}${unsure ? ' · <span style="color:var(--danger)">low confidence → UNSURE.md</span>' : ""}</div>
-          <div class="preview-hint">↓ Click Save to memory to commit</div>
-        </div>`;
+      await commitEntry(preset);
     } catch (e) {
-      toast("Auto-tag failed: " + e.message, true);
+      toast("Save failed: " + e.message, true);
     } finally {
-      btn.innerHTML = `<svg viewBox="0 0 16 16"><path d="M14 2H9l-7 7 5 5 7-7V2z"/><circle cx="12" cy="4" r="1.2" fill="currentColor" stroke="none"/></svg> Auto-tag`;
-      btn.disabled = false;
+      saveBtn.innerHTML = `${SAVE_ICON} Save to memory`;
       saveBtn.disabled = false;
+      rawBtn.disabled  = false;
     }
   };
 
-  $("#save").onclick = async () => {
+  // Secondary: save raw without LLM
+  $("#raw").onclick = async () => {
     const saveBtn = $("#save");
-    const autoBtn = $("#auto");
-    saveBtn.disabled = true;
-    autoBtn.disabled = true;
+    const rawBtn  = $("#raw");
+    const text = $("#text").value.trim();
+    if (!text) { toast("Type or attach some text first.", true); return; }
 
-    const preset = saveBtn.dataset.preset ? JSON.parse(saveBtn.dataset.preset) : null;
-
-    async function doSave() {
+    async function doRaw() {
+      saveBtn.disabled = true;
+      rawBtn.disabled  = true;
+      rawBtn.innerHTML = `${RAW_ICON} Saving…`;
       try {
-        const text = $("#text").value.trim();
-        if (!text) { toast("Empty memory.", true); return; }
-        const type = $("#type").value;
-        const scope = resolveScope($("#scope").value, config.owner);
-        const useUnsure = $("#unsure").checked || type === "Unsure";
-        const target = useUnsure ? "UNSURE.md" : "GENERAL.md";
-        const timestamp = new Date().toISOString();
-        const entry = {
-          timestamp,
-          shortTitle: preset?.short_title ?? text.split("\n")[0].slice(0, 60),
-          scope, type,
-          tags: preset?.tags ?? "",
-          source: "UI",
-          summary: preset?.one_sentence_summary ?? "",
-          bullets: preset?.bullets ?? [],
-          full: text,
-        };
-        const block = "\n" + renderEntry(entry);
-        const res = await gh.commitFile({ path: target, append: block, message: `team-memory: add entry to ${target}` });
-        if (!res.ok) {
-          if (res.kind === "conflict") toast("File changed on GitHub — try again.", true);
-          else if (res.kind === "auth") toast("Auth failed — check your PAT.", true);
-          else toast(`Save failed (${res.kind}): ${res.message ?? ""}`, true);
-          return;
-        }
-        const idxFile = await getIndex(gh, cache, true);
-        const idx = parseIndex(idxFile.content);
-        if (!idx.entries.find(e => e.path === target)) {
-          const scopeStr = target.startsWith("users/") ? `personal:${config.owner}` : "shared";
-          upsertEntry(idx, { path: target, scope: scopeStr, topics: preset?.tags ?? type.toLowerCase() });
-          await gh.putContent({ path: "INDEX.md", content: serializeIndex(idx), message: "team-memory: update INDEX.md" });
-        }
-        await cache.delete("file:" + target);
-        await cache.delete("file:INDEX.md");
-        $("#text").value = "";
-        $("#preview").innerHTML = "";
-        saveBtn.dataset.preset = "";
-        toast(`Saved to ${target}.`);
+        await commitEntry(null);
       } catch (e) {
         toast("Save failed: " + e.message, true);
       } finally {
-        saveBtn.innerHTML = `<svg viewBox="0 0 16 16"><path d="M2 2h9l3 3v9H2V2z"/><rect x="4" y="9" width="8" height="5" rx="1"/><rect x="4" y="2" width="6" height="4" rx="1"/></svg> Save to memory`;
+        rawBtn.innerHTML = `${RAW_ICON} Save without classification`;
         saveBtn.disabled = false;
-        autoBtn.disabled = false;
+        rawBtn.disabled  = false;
       }
     }
 
-    if (config.check_first && !preset) {
+    if (config.check_first) {
       if (!root.querySelector("#check-first-confirm")) {
         const box = document.createElement("div");
         box.id = "check-first-confirm";
@@ -185,21 +177,12 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
           <button id="cfyes" class="btn-primary" style="padding:6px 14px;font-size:13px;">Save</button>
           <button id="cfno" class="btn-outline" style="padding:6px 14px;font-size:13px;">Cancel</button>`;
         $("#preview").before(box);
-        box.querySelector("#cfno").onclick = () => {
-          box.remove();
-          saveBtn.innerHTML = `<svg viewBox="0 0 16 16"><path d="M2 2h9l3 3v9H2V2z"/><rect x="4" y="9" width="8" height="5" rx="1"/><rect x="4" y="2" width="6" height="4" rx="1"/></svg> Save to memory`;
-          saveBtn.disabled = false;
-          autoBtn.disabled = false;
-        };
-        box.querySelector("#cfyes").onclick = () => { box.remove(); doSave(); };
-      } else {
-        saveBtn.innerHTML = `<svg viewBox="0 0 16 16"><path d="M2 2h9l3 3v9H2V2z"/><rect x="4" y="9" width="8" height="5" rx="1"/><rect x="4" y="2" width="6" height="4" rx="1"/></svg> Save to memory`;
-        saveBtn.disabled = false;
-        autoBtn.disabled = false;
+        box.querySelector("#cfno").onclick = () => box.remove();
+        box.querySelector("#cfyes").onclick = () => { box.remove(); doRaw(); };
       }
       return;
     }
-    await doSave();
+    await doRaw();
   };
 }
 

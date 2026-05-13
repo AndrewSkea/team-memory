@@ -10,3 +10,6 @@ var Summarize string
 
 //go:embed session.txt
 var Session string
+
+//go:embed reminder.txt
+var Reminder string

@@ -40,6 +40,9 @@ try {
     # ── install binary ────────────────────────────────────────────────────────
     if (-not (Test-Path $BinDir)) { New-Item -ItemType Directory -Path $BinDir | Out-Null }
     Expand-Archive "$TmpDir\$Archive" -DestinationPath $TmpDir -Force
+    # Kill running instance before overwriting the locked binary
+    Get-Process -Name $Binary -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
     Copy-Item "$TmpDir\$Binary.exe" "$BinDir\$Binary.exe" -Force
     Write-Host "Installed to $BinDir\$Binary.exe"
 
@@ -153,14 +156,19 @@ $ClaudeJson = "$env:USERPROFILE\.claude.json"
 if (-not (Test-Path $ClaudeJson)) { [System.IO.File]::WriteAllText($ClaudeJson, '{}', (New-Object System.Text.UTF8Encoding $false)) }
 
 # Service mode: Claude Code starts on port 7439 to avoid conflict with service on 7438
-$McpArgs = if ($RunChoice -eq "1") { '["--mcp","--port","7439"]' } else { '["--mcp"]' }
+# Pass args as individual positional params (PS 5.1 strips quotes from JSON strings)
+if ($RunChoice -eq "1") {
+    $McpArgList = @("--mcp", "--port", "7439")
+} else {
+    $McpArgList = @("--mcp")
+}
 
 $McpPy = @'
 import sys, json
 
 path = sys.argv[1]
 binary_path = sys.argv[2]
-args = json.loads(sys.argv[3])
+args = sys.argv[3:]
 with open(path, encoding='utf-8') as f:
     data = json.load(f)
 
@@ -175,7 +183,7 @@ else:
 with open(path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
 '@
-$McpPy | python - $ClaudeJson "$BinDir\$Binary.exe" $McpArgs
+$McpPy | python - $ClaudeJson "$BinDir\$Binary.exe" @McpArgList
 
 # ── service setup ─────────────────────────────────────────────────────────────
 $Port = 7438
@@ -183,10 +191,12 @@ $WebUrl = "http://127.0.0.1:$Port/"
 
 if ($RunChoice -eq "1") {
     $ExePath = "$BinDir\$Binary.exe"
-    $HostsOk = $false
 
     if ($IsAdmin) {
-        # ── admin path: Task Scheduler (RunLevel Highest) + hosts + port 80 ──
+        # ── admin path: Task Scheduler (RunLevel Highest) + hosts + portproxy 80->7438 ──
+        # Go uses raw sockets (net.Listen), not HTTP.sys, so binding port 80 directly
+        # requires the process to be elevated. Using portproxy avoids that: the binary
+        # always listens on 7438 and netsh forwards 127.0.0.1:80 -> 127.0.0.1:7438.
         $HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
         $HostsContent = Get-Content $HostsFile -Raw -ErrorAction SilentlyContinue
         if ($HostsContent -notlike "*team-mem*") {
@@ -195,28 +205,30 @@ if ($RunChoice -eq "1") {
         } else {
             Write-Host "  team-mem already in hosts file"
         }
-        $HostsOk = ($HostsContent -like "*team-mem*") -or $true
 
-        $Port80Ok = $false
-        try {
-            $null = & netsh http add urlacl url="http://team-mem:80/" user="$env:USERNAME" 2>&1
-            $Port80Ok = $true
-            Write-Host "  Port 80 granted - browser URL: http://team-mem/"
-        } catch {
-            Write-Host "  netsh failed - browser URL: http://team-mem:7438/"
+        # portproxy: browser hits team-mem:80 -> 127.0.0.1:7438
+        & netsh interface portproxy add v4tov4 listenport=80 listenaddress=127.0.0.1 connectport=7438 connectaddress=127.0.0.1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  Port 80 portproxy set - browser URL: http://team-mem/"
+            $WebUrl = "http://team-mem/"
+        } else {
+            Write-Host "  portproxy failed - browser URL: http://team-mem:7438/"
+            $WebUrl = "http://team-mem:7438/"
         }
 
         $TaskName  = "TeamMemoryMCP"
-        $PortArg   = if ($Port80Ok) { "--port 80" } else { "--port 7438" }
-        $Action    = New-ScheduledTaskAction -Execute $ExePath -Argument $PortArg
+        $Action    = New-ScheduledTaskAction -Execute $ExePath -Argument "--port 7438"
         $Trigger   = New-ScheduledTaskTrigger -AtLogOn
         $Settings  = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit 0 -MultipleInstances IgnoreNew
         $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest
         Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Principal $Principal -Force | Out-Null
-        try { Start-ScheduledTask -TaskName $TaskName; Write-Host "  Task '$TaskName' registered and started" }
-        catch { Write-Host "  Task '$TaskName' registered (starts at next logon)" }
-
-        $WebUrl = if ($Port80Ok) { "http://team-mem/" } else { "http://team-mem:7438/" }
+        Write-Host "  Task '$TaskName' registered (auto-starts at logon)"
+        # Start-ScheduledTask with RunLevel Highest queues rather than starts when called
+        # from within an elevated session. Start directly instead.
+        Get-Process -Name $Binary -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 500
+        Start-Process -FilePath $ExePath -ArgumentList '--port 7438' -WindowStyle Hidden
+        Write-Host "  Started team-memory-mcp on port 7438"
 
     } else {
         # ── non-admin path: registry Run key, port 7438 ───────────────────────
@@ -243,7 +255,7 @@ if ($RunChoice -eq "1") {
 
 # ── summary ───────────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "✓ team-memory-mcp installed"
+Write-Host "team-memory-mcp installed OK"
 Write-Host ""
 Write-Host "  Binary:  $BinDir\$Binary.exe"
 Write-Host "  Config:  $env:APPDATA\team-memory\config.json"

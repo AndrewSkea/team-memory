@@ -1,26 +1,54 @@
+<div align="center">
+
 # team-memory
 
-Local-first memory app. All data lives in your own GitHub repo as Markdown.
-`team-memory-mcp` auto-saves a structured summary of every Claude Code session
-to your GitHub repo when the session ends.
+**A local-first knowledge base that grows with every coding session.**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+Your own GitHub repo. Plain Markdown. No cloud. No lock-in.
+
+</div>
+
+---
+
+A personal wiki for developers — versioned, searchable, and fully yours. Build knowledge through two complementary flows:
+
+- **Web UI** — a clean note-taking interface to capture decisions, patterns, gotchas, and workflows whenever you think of them
+- **Claude Code CLI** — a session-end hook that automatically summarises what you built and commits a structured entry to your knowledge base, hands-free
+
+![team-memory web UI](assets/image.png)
+
+---
+
+## Features
+
+| | |
+|---|---|
+| **Auto-save sessions** | Hook fires when Claude Code ends, summarises with Claude, commits structured entry to your repo |
+| **Web UI** | Browse, save, lookup, and flag stale entries at `http://127.0.0.1:7438` |
+| **Smart categorisation** | LLM picks the right file from your index — or skip it and save directly |
+| **GitHub-backed storage** | Plain Markdown in a repo you own — edit, search, and version-control it directly |
+| **MCP server** | Claude Code can read and write your knowledge base mid-session |
+| **No telemetry** | Binds `127.0.0.1` only, never phones home |
+
+---
 
 ## Install
 
-**macOS / Linux:**
+**macOS / Linux**
 ```sh
-curl -LsSf https://raw.githubusercontent.com/AndrewSkea/team-memory/main/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/AndrewSkea/team-memory/master/install.sh | sh
 ```
 
-**Windows (PowerShell):**
+**Windows (PowerShell)**
 ```powershell
-irm https://raw.githubusercontent.com/AndrewSkea/team-memory/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/AndrewSkea/team-memory/master/install.ps1 | iex
 ```
 
-The installer downloads and verifies the binary, adds it to `~/bin`, prompts for your
-GitHub PAT and memory repo, wires `Stop`/`PreCompact` hooks into `~/.claude/settings.json`,
-and registers the MCP server in `~/.claude.json`.
+The installer downloads the binary, adds it to `~/bin`, prompts for your GitHub PAT and memory repo, wires `Stop`/`PreCompact` hooks into `~/.claude/settings.json`, and registers the MCP server in `~/.claude.json`.
 
-You need a GitHub repo and a fine-grained PAT with `contents:write` on that repo.
+> **Prerequisites:** a GitHub repo and a fine-grained PAT with `contents:write` on that repo.
 
 ### Service mode (always-on web UI)
 
@@ -29,67 +57,47 @@ The installer offers two run modes. Service mode keeps the web UI available at a
 | | Non-admin (default) | Admin (`Run as Administrator`) |
 |---|---|---|
 | Autostart | Registry `HKCU\...\Run` key | Task Scheduler (`RunLevel Highest`) |
-| Port | 7438 | 80 (via `netsh urlacl`) |
 | Browser URL | `http://127.0.0.1:7438/` | `http://team-mem/` |
 | `team-mem` hostname | Manual (see below) | Auto-added to hosts file |
+| Port 80 redirect | — | `netsh interface portproxy` 80 → 7438 |
 
-To get the `http://team-mem/` shortcut without re-running as admin, add one line to
-`C:\Windows\System32\drivers\etc\hosts` (requires admin once):
+To get the `http://team-mem/` shortcut without re-running as admin, add one line to `C:\Windows\System32\drivers\etc\hosts` (requires admin once):
 ```
 127.0.0.1 team-mem
 ```
+Then access via `http://team-mem:7438/` (no portproxy without admin).
+
+---
 
 ## Usage
 
-After install, just use Claude Code normally. When you end a session, `team-memory-mcp`
-automatically summarises it and commits a structured entry to your memory repo.
+After install, use Claude Code normally. When a session ends, `team-memory-mcp` automatically summarises it and commits a structured entry to your memory repo. Open `http://127.0.0.1:7438` to browse your knowledge base, save entries manually, or search by keyword.
 
-## Web UI (optional)
+---
 
-The web UI lets you browse, search, and manually add memories.
+## Privacy & Security
 
-**Prereqs:** Node 20+
+- PAT and Anthropic key stored in `~/.config/team-memory/config.json` (CLI) and browser `localStorage` (web UI)
+- Binary binds `127.0.0.1` only — never exposed to the network
+- No telemetry, no third-party scripts
 
-```bash
-make prompts
-npm run serve
-# open http://localhost:8080
-```
+See [SECURITY.md](SECURITY.md) for the full threat model.
 
-Setup page: paste PAT, owner/repo, and optionally an Anthropic API key.
-
-## Tests
-
-```bash
-make test           # runs frontend + MCP tests
-```
-
-## Smoke checklist
-
-1. Setup page accepts PAT + repo, shows "Authenticated as \<login\>".
-2. If repo was empty, INDEX.md / GENERAL.md / UNSURE.md appear in GitHub.
-3. Remember page → type "test memory" → Save → entry appears in GENERAL.md
-   on GitHub with the right `### Entry:` block.
-4. Auto-categorize button returns a target file and summary; saving commits to
-   that file and updates INDEX.md.
-5. Lookup page finds the new entry by keyword.
-6. Pulling the repo from GitHub directly while save is in flight should
-   produce a "file changed in GitHub" error after 3 retries (manual test).
-
-## Privacy
-
-- PAT and Anthropic key are stored in your browser's `localStorage` (web UI) and
-  `~/.config/team-memory/config.json` (CLI). No telemetry, no third-party scripts.
-- The MCP binds `127.0.0.1` only.
+---
 
 ## Contributing
 
-Prereqs: Go 1.22+, Node 20+.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build instructions, project layout, and code style.
 
 ```bash
-make build          # build binary locally
-make install        # build + copy to ~/bin (then run sh install.sh for hooks)
-make test           # run all tests
+make build   # build binary locally
+make test    # run all tests
 ```
 
-To cut a release, push a `v*` tag — GitHub Actions builds and publishes automatically.
+---
+
+<div align="center">
+
+[MIT License](LICENSE) · © Andrew Skea
+
+</div>

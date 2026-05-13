@@ -43,5 +43,10 @@ export class AnthropicDirect {
     return this._call(sys, JSON.stringify({ filename, text }));
   }
 
+  async formatReminder({ title, dueDate, details }) {
+    const sys = await this.loadPrompt("reminder");
+    return this._call(sys, JSON.stringify({ title, due_date: dueDate, details }));
+  }
+
   async healthy() { return true; }
 }

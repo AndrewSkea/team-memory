@@ -18,6 +18,8 @@ import (
 	"github.com/AndrewSkea/team-memory/mcp/server"
 )
 
+var version = "dev"
+
 func main() {
 	once := flag.String("once", "", "run one-shot command (session-end|precompact) and exit")
 	mcp  := flag.Bool("mcp", false, "run as MCP stdio server (used by Claude Code)")
@@ -33,7 +35,7 @@ func main() {
 	}
 
 	runner := llm.NewClaude("")
-	srv := server.New(server.Config{Runner: runner})
+	srv := server.New(server.Config{Runner: runner, Version: version})
 	handler := buildHandler(srv)
 	addr := "127.0.0.1:" + *port
 

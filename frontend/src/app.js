@@ -3,6 +3,14 @@ import { renderRemember } from "./pages/remember.js";
 import { renderLookup } from "./pages/lookup.js";
 import { renderStats } from "./pages/stats.js";
 import { renderStale } from "./pages/stale.js";
+import { renderMeetings } from './pages/meetings.js';
+import { renderProjects } from './pages/projects.js';
+import { renderDecisions } from './pages/decisions.js';
+import { renderActions } from './pages/actions.js';
+import { renderTopics } from './pages/topics.js';
+import { renderTimeline } from './pages/timeline.js';
+import { renderReminders } from './pages/reminders.js';
+import { GitHubClient } from './services/github.js';
 
 const CONFIG_KEY = "team-memory:config";
 
@@ -25,9 +33,9 @@ const footer = document.getElementById("footer");
 
 function updateFooter(config) {
   if (config.owner && config.repo) {
-    footer.textContent = `${config.owner} · ${config.owner}/${config.repo}`;
+    footer.innerHTML = `<span class="footer-dot connected"></span>${config.owner} · ${config.owner}/${config.repo}`;
   } else {
-    footer.innerHTML = `<button id="forget-auth-footer" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;">Forget auth</button>`;
+    footer.innerHTML = `<span class="footer-dot"></span><button id="forget-auth-footer" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:0;line-height:1;vertical-align:middle;">Forget auth</button>`;
     document.getElementById("forget-auth-footer")?.addEventListener("click", forgetAuth);
   }
 }
@@ -48,6 +56,7 @@ export function go(page) {
     b.classList.toggle("active", b.dataset.page === page);
   }
   updateFooter(config);
+  const gh = new GitHubClient(config);
   if (page === "setup") {
     renderSetup(root, {
       config,
@@ -61,6 +70,20 @@ export function go(page) {
     renderStats(root, { config, toast });
   } else if (page === "stale") {
     renderStale(root, { config, toast });
+  } else if (page === "meetings") {
+    renderMeetings(root, config, gh);
+  } else if (page === "projects") {
+    renderProjects(root, config, gh);
+  } else if (page === "decisions") {
+    renderDecisions(root, config, gh);
+  } else if (page === "actions") {
+    renderActions(root, config, gh);
+  } else if (page === "reminders") {
+    renderReminders(root, config, gh);
+  } else if (page === "topics") {
+    renderTopics(root, config, gh);
+  } else if (page === "timeline") {
+    renderTimeline(root, config, gh);
   } else {
     renderLookup(root, { config, toast });
   }
@@ -71,4 +94,27 @@ nav.addEventListener("click", e => {
   if (b) go(b.dataset.page);
 });
 
-go("remember");
+// Bootstrap: fetch health (version) + pre-populate localStorage from CLI config on first visit
+async function bootstrap() {
+  try {
+    const h = await fetch("/health");
+    if (h.ok) {
+      const { version } = await h.json();
+      if (version) {
+        const sub = document.querySelector(".subtitle");
+        if (sub) sub.textContent = version;
+      }
+    }
+  } catch {}
+  if (!loadConfig().token) {
+    try {
+      const r = await fetch("/v1/config");
+      if (r.ok) {
+        const cfg = await r.json();
+        if (cfg.token && cfg.owner && cfg.repo) { saveConfig(cfg); }
+      }
+    } catch {}
+  }
+  go("remember");
+}
+bootstrap();

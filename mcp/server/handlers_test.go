@@ -73,6 +73,59 @@ func TestCategorize_BadJSON(t *testing.T) {
 	}
 }
 
+func TestGetConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"token":"tok","owner":"o","repo":"r","check_first":false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := New(Config{ConfigPath: cfgPath})
+	req := httptest.NewRequest(http.MethodGet, "/v1/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+	var cfg map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&cfg); err != nil {
+		t.Fatalf("bad json: %v", err)
+	}
+	if cfg["token"] != "tok" || cfg["owner"] != "o" || cfg["repo"] != "r" {
+		t.Errorf("unexpected config: %v", cfg)
+	}
+}
+
+func TestGetConfig_Missing(t *testing.T) {
+	srv := New(Config{ConfigPath: filepath.Join(t.TempDir(), "nonexistent.json")})
+	req := httptest.NewRequest(http.MethodGet, "/v1/config", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestHandleReminder(t *testing.T) {
+	runner := &fakeRunner{out: `{"short_title":"Submit report","bullets":["Review submissions"],"tags":"deadline"}`}
+	srv := New(Config{Runner: runner})
+	body := `{"title":"Submit report","due_date":"2026-05-20","details":"See email from boss"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/reminder", bytes.NewBufferString(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if out["short_title"] != "Submit report" {
+		t.Errorf("unexpected short_title: %v", out["short_title"])
+	}
+}
+
 func TestExportConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
