@@ -164,21 +164,28 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
   };
 
   // .msg drag-drop for Meeting Notes
-  function handleMsgFile(file) {
+  async function handleMsgFile(file) {
     if (!file || !file.name.endsWith('.msg')) return;
-    file.arrayBuffer().then(buf => {
-      try {
-        const { subject, date, displayTo, body } = parseMsgFile(buf);
-        const parts = [];
-        if (subject) parts.push(`Meeting: ${subject}`);
-        if (date) parts.push(`Date: ${date.toISOString().slice(0, 10)}`);
-        if (displayTo) parts.push(`Attendees: ${displayTo}`);
-        if (body) parts.push('', body.trim().slice(0, 2000));
-        $("#text").value = parts.join('\n');
-      } catch {
-        toast("Could not parse .msg file", true);
-      }
-    });
+    let buf;
+    try {
+      buf = await file.arrayBuffer();
+    } catch (e) {
+      console.error("remember: failed to read .msg buffer", e);
+      toast("Could not read .msg file", true);
+      return;
+    }
+    try {
+      const { subject, date, displayTo, body } = parseMsgFile(buf);
+      const parts = [];
+      if (subject) parts.push(`Meeting: ${subject}`);
+      if (date) parts.push(`Date: ${date.toISOString().slice(0, 10)}`);
+      if (displayTo) parts.push(`Attendees: ${displayTo}`);
+      if (body) parts.push('', body.trim().slice(0, 2000));
+      $("#text").value = parts.join('\n');
+    } catch (e) {
+      console.error("remember: failed to parse .msg file", e);
+      toast("Could not parse .msg file", true);
+    }
   }
   const drop = $("#mdrop");
   drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });

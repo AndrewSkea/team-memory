@@ -4,6 +4,7 @@ import { renderLookup } from "./pages/lookup.js";
 import { renderStats } from "./pages/stats.js";
 import { renderMeetings } from './pages/meetings.js';
 import { GitHubClient } from './services/github.js';
+import { escapeHtml } from './services/html.js';
 
 const CONFIG_KEY = "team-memory:config";
 
@@ -26,7 +27,7 @@ const footer = document.getElementById("footer");
 
 function updateFooter(config) {
   if (config.owner && config.repo) {
-    footer.innerHTML = `<span class="footer-dot connected"></span>${config.owner} · ${config.owner}/${config.repo}`;
+    footer.innerHTML = `<span class="footer-dot connected"></span>${escapeHtml(config.owner)} · ${escapeHtml(config.owner)}/${escapeHtml(config.repo)}`;
   } else {
     footer.innerHTML = `<span class="footer-dot"></span><button id="forget-auth-footer" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:0;line-height:1;vertical-align:middle;">Forget auth</button>`;
     document.getElementById("forget-auth-footer")?.addEventListener("click", forgetAuth);
@@ -84,7 +85,9 @@ async function bootstrap() {
         if (sub) sub.textContent = version;
       }
     }
-  } catch {}
+  } catch (e) {
+    console.warn("bootstrap: /health unreachable — backend may not be running", e);
+  }
   if (!loadConfig().token) {
     try {
       const r = await fetch("/v1/config");
@@ -92,7 +95,9 @@ async function bootstrap() {
         const cfg = await r.json();
         if (cfg.token && cfg.owner && cfg.repo) { saveConfig(cfg); }
       }
-    } catch {}
+    } catch (e) {
+      console.warn("bootstrap: /v1/config unreachable", e);
+    }
   }
   go("remember");
 }

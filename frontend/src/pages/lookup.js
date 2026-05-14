@@ -2,6 +2,7 @@ import { GitHubClient } from "../services/github.js";
 import { Cache } from "../services/cache.js";
 import { parseIndex } from "../services/indexmd.js";
 import { incrementLookups } from "../services/stats.js";
+import { escapeHtml } from "../services/html.js";
 
 export function extractTagsFromIndex(indexContent) {
   const matches = [...indexContent.matchAll(/\*\*Tags:\*\*\s*([^\n]+)/g)];
@@ -47,7 +48,7 @@ export function renderLookup(root, { config, toast }) {
         const chipBar = $("#tag-chips");
         if (chipBar && tags.length > 0) {
           chipBar.innerHTML = tags.map(t =>
-            `<button class="tag-chip" data-tag="${t}">${t}</button>`
+            `<button class="tag-chip" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`
           ).join('');
           chipBar.querySelectorAll('.tag-chip').forEach(btn => {
             btn.onclick = () => {
@@ -60,7 +61,10 @@ export function renderLookup(root, { config, toast }) {
           });
         }
       }
-    } catch {}
+    } catch (e) {
+      console.error("lookup: failed to load tag index", e);
+      toast("Lookup unavailable: " + (e?.message ?? "could not load index"), true);
+    }
   })();
 
   $("#q").oninput = () => {
@@ -118,11 +122,11 @@ function renderResults(config, fileHits, entryHits) {
   const url = (p, line) => `https://github.com/${config.owner}/${config.repo}/blob/master/${p}${line ? `#L${line + 1}` : ""}`;
 
   const fileItems = fileHits.map(e =>
-    `<li><a href="${url(e.path)}" target="_blank">${e.path}</a> <span style="color:var(--muted);font-size:12px;">${e.topics}</span></li>`
+    `<li><a href="${escapeHtml(url(e.path))}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.path)}</a> <span style="color:var(--muted);font-size:12px;">${escapeHtml(e.topics)}</span></li>`
   ).join("") || `<li style="color:var(--muted);">none</li>`;
 
   const entryItems = entryHits.map(h =>
-    `<li><a href="${url(h.path, h.line)}" target="_blank">${h.header.replace("### Entry: ", "")}</a> <span style="color:var(--muted);font-size:12px;">${h.path}</span></li>`
+    `<li><a href="${escapeHtml(url(h.path, h.line))}" target="_blank" rel="noopener noreferrer">${escapeHtml(h.header.replace("### Entry: ", ""))}</a> <span style="color:var(--muted);font-size:12px;">${escapeHtml(h.path)}</span></li>`
   ).join("") || `<li style="color:var(--muted);">none</li>`;
 
   return `

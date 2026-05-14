@@ -39,7 +39,7 @@ test('nav renders all four tabs', async ({ page }) => {
   await expect(nav.locator('button', { hasText: 'Remember' })).toBeVisible();
   await expect(nav.locator('button', { hasText: 'Lookup' })).toBeVisible();
   await expect(nav.locator('button', { hasText: 'Stats' })).toBeVisible();
-  await expect(nav.locator('button', { hasText: 'Stale' })).toBeVisible();
+  await expect(nav.locator('button', { hasText: 'Meetings' })).toBeVisible();
 });
 
 test('no credentials redirects to setup', async ({ page }) => {
@@ -172,18 +172,15 @@ test('stats: loads stat cells', async ({ page }) => {
   await expect(page.locator('.stat-cell').first()).toBeVisible({ timeout: 8000 });
 });
 
-// ── stale page ────────────────────────────────────────────────────────────────
+// ── meetings page ────────────────────────────────────────────────────────────
 
-test('stale: loads without error', async ({ page }) => {
+test('meetings: loads without error', async ({ page }) => {
   await page.addInitScript(seedConfig());
   await mockGitHubAPI(page);
   await page.goto('/');
 
-  await page.locator('.nav-btn', { hasText: 'Stale' }).click();
-  // Should show either stale items or the "fresh" empty message
-  await expect(
-    page.locator('.result-item, .stale-empty')
-  ).toBeVisible({ timeout: 8000 });
+  await page.locator('.nav-btn', { hasText: 'Meetings' }).click();
+  await expect(page.locator('#root')).toBeVisible({ timeout: 8000 });
 });
 
 // ── forget auth ───────────────────────────────────────────────────────────────

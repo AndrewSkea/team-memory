@@ -1,3 +1,5 @@
+import { escapeHtml } from "../services/html.js";
+
 export function formatAction({ text, priority, owner, due }) {
   let line = `- [ ] ${priority} | ${text}`;
   if (owner.trim()) line += ` | Owner: ${owner.trim()}`;
@@ -25,7 +27,11 @@ export function renderActions(container, config, gh) {
     try {
       const f = await gh.getFile('ACTIONS.md');
       if (f.exists) existingContent = f.content;
-    } catch {}
+    } catch (e) {
+      console.error("actions: failed to load ACTIONS.md", e);
+      container.innerHTML = `<div class="card"><p style="color:var(--error)">${escapeHtml("Could not load actions: " + (e?.message ?? e))}</p></div>`;
+      return;
+    }
     render(existingContent);
   }
 
@@ -36,7 +42,7 @@ export function renderActions(container, config, gh) {
       : actions.map((a, i) => `
         <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border,#eee)">
           <input type="checkbox" data-idx="${i}" data-line="${encodeURIComponent(a.line)}" ${a.done ? 'checked' : ''} style="accent-color:var(--accent,#c84e1a)">
-          <span style="${a.done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${a.text}</span>
+          <span style="${a.done ? 'text-decoration:line-through;color:var(--muted)' : ''}">${escapeHtml(a.text)}</span>
         </div>`).join('');
 
     container.innerHTML = `
@@ -102,7 +108,7 @@ export function renderActions(container, config, gh) {
         await gh.commitFile({ path: 'ACTIONS.md', append: md, message: `feat: add action — ${text.slice(0, 40)}` });
         load();
       } catch (e) {
-        document.getElementById('astatus').innerHTML = `<p style="color:var(--error)">${e.message}</p>`;
+        document.getElementById('astatus').innerHTML = `<p style="color:var(--error)">${escapeHtml(e.message)}</p>`;
         document.getElementById('asave').disabled = false;
         document.getElementById('asave').textContent = 'Add action';
       }

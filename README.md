@@ -2,20 +2,20 @@
 
 # team-memory
 
-**A local-first knowledge base that grows with every coding session.**
+**Shared, version-controlled knowledge base your whole team builds together — one note at a time.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
-Your own GitHub repo. Plain Markdown. No cloud. No lock-in.
 
 </div>
 
 ---
 
-A personal wiki for developers — versioned, searchable, and fully yours. Build knowledge through two complementary flows:
+Most team knowledge lives in people's heads, scattered Slack threads, or stale wikis nobody trusts. team-memory is different: it lives in a Git repo your team already owns, every entry is a commit, and anyone can open the web UI and jot something down in seconds.
 
-- **Web UI** — a clean note-taking interface to capture decisions, patterns, gotchas, and workflows whenever you think of them
-- **Claude Code CLI** — a session-end hook that automatically summarises what you built and commits a structured entry to your knowledge base, hands-free
+Two ways to build it up:
+
+- **Web UI** — lightweight note-taking interface at `http://team-mem`. Capture a decision, a gotcha, a workflow pattern — whenever it crosses your mind, not just at the end of a session
+- **Claude Code hook** — fires automatically when a session ends, summarises what was built, and commits a structured entry hands-free
 
 ![team-memory web UI](assets/image.png)
 
@@ -46,9 +46,13 @@ curl -LsSf https://raw.githubusercontent.com/AndrewSkea/team-memory/master/insta
 irm https://raw.githubusercontent.com/AndrewSkea/team-memory/master/install.ps1 | iex
 ```
 
-The installer downloads the binary, adds it to `~/bin`, prompts for your GitHub PAT and memory repo, wires `Stop`/`PreCompact` hooks into `~/.claude/settings.json`, and registers the MCP server in `~/.claude.json`.
+The installer downloads the binary, adds it to `~/bin` (or `%USERPROFILE%\bin` on Windows), prompts for your GitHub PAT and memory repo, wires `Stop`/`PreCompact` hooks into `~/.claude/settings.json`, and registers the MCP server in `~/.claude.json`. Config is written with mode `600` on Unix.
 
 > **Prerequisites:** a GitHub repo and a fine-grained PAT with `contents:write` on that repo.
+>
+> **What needs elevated privileges?** On Linux/macOS, `install.sh` only calls `sudo` if you pick service mode — to append `127.0.0.1 team-mem` to `/etc/hosts` and (Linux) `setcap cap_net_bind_service` on the binary so it can bind port 80. Skip service mode to avoid `sudo` entirely. On Windows, `install.ps1` requires no admin by default; running it elevated additionally configures `netsh portproxy` and the hosts entry.
+>
+> **Binary install location trust:** the binary lives under your user profile (`~/bin` or `%USERPROFILE%\bin`). Anything that can write there can replace the binary — keep that directory's ACL/permissions as they default for your user. For a multi-user machine, install to a system path manually and run from there instead.
 
 ### Service mode (always-on web UI)
 

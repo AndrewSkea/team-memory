@@ -70,7 +70,9 @@ if (Test-Path $ConfigFile) {
         $j   = $raw | ConvertFrom-Json
         $ExistingPAT = $j.token
         if ($j.owner -and $j.repo) { $ExistingSlug = "$($j.owner)/$($j.repo)" }
-    } catch {}
+    } catch {
+        Write-Host "Warning: could not parse existing $ConfigFile - will prompt for fresh values."
+    }
 }
 
 # ── prompt for config ─────────────────────────────────────────────────────────

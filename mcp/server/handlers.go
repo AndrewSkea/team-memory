@@ -57,7 +57,11 @@ func (s *Server) handleCategorize(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	payloadJSON, _ := json.Marshal(req.Payload)
+	payloadJSON, err := json.Marshal(req.Payload)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "marshal payload: "+err.Error())
+		return
+	}
 	prompt := prompts.Categorize +
 		"\n\nINDEX:\n" + req.Index +
 		"\nPAYLOAD:\n" + string(payloadJSON)
@@ -93,7 +97,11 @@ func (s *Server) handleSummarize(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	payloadJSON, _ := json.Marshal(req)
+	payloadJSON, err := json.Marshal(req)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "marshal payload: "+err.Error())
+		return
+	}
 	prompt := prompts.Summarize + "\n\nINPUT:\n" + string(payloadJSON)
 
 	if s.cfg.Runner == nil {
@@ -128,7 +136,11 @@ func (s *Server) handleReminder(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
 		return
 	}
-	payloadJSON, _ := json.Marshal(req)
+	payloadJSON, err := json.Marshal(req)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "marshal payload: "+err.Error())
+		return
+	}
 	prompt := prompts.Reminder + "\n\nINPUT:\n" + string(payloadJSON)
 	if s.cfg.Runner == nil {
 		writeErr(w, http.StatusServiceUnavailable, "no LLM runner configured")

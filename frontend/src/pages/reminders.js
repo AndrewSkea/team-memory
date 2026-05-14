@@ -1,5 +1,6 @@
 import { parseMsgFile } from "../services/msgparser.js";
 import { pickBackend } from "../services/llm/backend.js";
+import { escapeHtml } from "../services/html.js";
 
 const FILE = owner => `users/${owner}/REMINDERS.md`;
 
@@ -136,7 +137,7 @@ export function renderReminders(root, config, gh) {
         ['rtitle', 'rdetails'].forEach(id => { document.getElementById(id).value = ''; });
         document.getElementById('rdate').value = new Date().toISOString().slice(0, 10);
       } catch (e) {
-        document.getElementById('rstatus').innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+        document.getElementById('rstatus').innerHTML = `<p style="color:var(--danger)">${escapeHtml(e.message)}</p>`;
       } finally {
         btn.disabled = false;
         btn.innerHTML = `<svg viewBox="0 0 16 16"><path d="M14 2H9l-7 7 5 5 7-7V2z"/><circle cx="12" cy="4" r="1.2" fill="currentColor" stroke="none"/></svg> Save reminder`;
@@ -167,18 +168,18 @@ export function renderReminders(root, config, gh) {
         const isOverdue = !r.done && r.dueDate < todayStr;
         return `<div class="reminder-item${isOverdue ? ' overdue' : ''}">
           <div class="reminder-header">
-            <span class="reminder-title">${r.title}</span>
-            <span class="reminder-due${isOverdue ? ' overdue' : ''}">${r.dueDate}</span>
+            <span class="reminder-title">${escapeHtml(r.title)}</span>
+            <span class="reminder-due${isOverdue ? ' overdue' : ''}">${escapeHtml(r.dueDate)}</span>
           </div>
-          ${r.bullets[0] ? `<div class="reminder-preview">${r.bullets[0]}</div>` : ''}
-          ${!r.done ? `<button class="reminder-done-btn" data-title="${r.title.replace(/"/g, '&quot;')}">Mark done</button>` : ''}
+          ${r.bullets[0] ? `<div class="reminder-preview">${escapeHtml(r.bullets[0])}</div>` : ''}
+          ${!r.done ? `<button class="reminder-done-btn" data-title="${escapeHtml(r.title)}">Mark done</button>` : ''}
         </div>`;
       }
 
       function section(label, arr, accent) {
         if (!arr.length) return '';
         return `<div class="reminder-group">
-          <div class="result-label" style="${accent ? 'color:var(--danger)' : ''}">${label}</div>
+          <div class="result-label" style="${accent ? 'color:var(--danger)' : ''}">${escapeHtml(label)}</div>
           ${arr.map(renderItem).join('')}
         </div>`;
       }
@@ -221,7 +222,7 @@ export function renderReminders(root, config, gh) {
       });
 
     } catch (e) {
-      content.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      content.innerHTML = `<p style="color:var(--danger)">${escapeHtml(e.message)}</p>`;
     }
   }
 

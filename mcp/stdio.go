@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -97,6 +98,7 @@ func runMCPStdio() error {
 		}
 		var req rpcRequest
 		if err := json.Unmarshal(line, &req); err != nil {
+			log.Printf("mcp stdio: dropping malformed JSON-RPC frame: %v", err)
 			continue
 		}
 		resp := dispatchMCP(req, cfg, client)

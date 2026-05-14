@@ -1,4 +1,5 @@
 import { parseMsgFile } from '../services/msgparser.js';
+import { escapeHtml } from '../services/html.js';
 
 export const MEETING_TEMPLATES = [
   { name: 'Blank',            fill: { title: '',                     decisions: '',                                      actions: '' } },
@@ -119,7 +120,7 @@ export function renderMeetings(container, config, gh) {
       document.getElementById('mstatus').innerHTML = '<p style="color:var(--success,green)">Saved to MEETINGS.md</p>';
       ['mtitle','mattendees','mdecisions','mactions'].forEach(id => { document.getElementById(id).value = ''; });
     } catch (e) {
-      document.getElementById('mstatus').innerHTML = `<p style="color:var(--error)">${e.message}</p>`;
+      document.getElementById('mstatus').innerHTML = `<p style="color:var(--error)">${escapeHtml(e.message)}</p>`;
     } finally {
       document.getElementById('msave').disabled = false;
       document.getElementById('msave').textContent = 'Save meeting notes';

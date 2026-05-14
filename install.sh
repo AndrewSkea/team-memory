@@ -81,9 +81,9 @@ CONFIG_FILE="$CONFIG_DIR/config.json"
 EXISTING_PAT=""
 EXISTING_SLUG=""
 if [ -f "$CONFIG_FILE" ]; then
-  EXISTING_PAT=$(python3 -c "import json; d=json.load(open('$CONFIG_FILE')); print(d.get('token',''))" 2>/dev/null || true)
-  EXISTING_OWNER=$(python3 -c "import json; d=json.load(open('$CONFIG_FILE')); print(d.get('owner',''))" 2>/dev/null || true)
-  EXISTING_REPO=$(python3 -c "import json; d=json.load(open('$CONFIG_FILE')); print(d.get('repo',''))" 2>/dev/null || true)
+  EXISTING_PAT=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('token',''))" "$CONFIG_FILE" 2>/dev/null || true)
+  EXISTING_OWNER=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('owner',''))" "$CONFIG_FILE" 2>/dev/null || true)
+  EXISTING_REPO=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('repo',''))" "$CONFIG_FILE" 2>/dev/null || true)
   if [ -n "$EXISTING_OWNER" ] && [ -n "$EXISTING_REPO" ]; then
     EXISTING_SLUG="$EXISTING_OWNER/$EXISTING_REPO"
   fi
@@ -115,8 +115,20 @@ if [ -n "$PAT" ] && [ -n "$SLUG" ]; then
   OWNER=$(printf '%s' "$SLUG" | cut -d/ -f1)
   REPO=$(printf '%s' "$SLUG" | cut -d/ -f2)
   mkdir -p "$CONFIG_DIR"
-  printf '{\n  "token": "%s",\n  "owner": "%s",\n  "repo": "%s",\n  "check_first": false\n}\n' \
-    "$PAT" "$OWNER" "$REPO" > "$CONFIG_FILE"
+  # JSON-encode each field so quotes/backslashes in PAT/owner/repo can't
+  # corrupt the file. (GitHub PATs don't contain these today but inputs
+  # come from a TTY — defence in depth.)
+  PAT="$PAT" OWNER="$OWNER" REPO="$REPO" python3 - "$CONFIG_FILE" <<'PYEOF'
+import json, os, sys
+out = {
+    "token": os.environ["PAT"],
+    "owner": os.environ["OWNER"],
+    "repo":  os.environ["REPO"],
+    "check_first": False,
+}
+with open(sys.argv[1], "w") as f:
+    json.dump(out, f, indent=2)
+PYEOF
   chmod 600 "$CONFIG_FILE"
   echo "Config written to $CONFIG_FILE"
 else

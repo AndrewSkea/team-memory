@@ -8,10 +8,26 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/AndrewSkea/team-memory/mcp/config"
 )
+
+// validRepoPath restricts file paths to repo-relative markdown segments.
+// Rejects "..", leading "/", and anything outside [A-Za-z0-9_./-].
+var validRepoPath = regexp.MustCompile(`^(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.md$`)
+
+func ValidatePath(path string) error {
+	if !validRepoPath.MatchString(path) {
+		return fmt.Errorf("invalid repo path: %q", path)
+	}
+	if strings.Contains(path, "..") {
+		return fmt.Errorf("path traversal not allowed: %q", path)
+	}
+	return nil
+}
 
 type FileInfo struct {
 	SHA     string
@@ -33,13 +49,25 @@ func NewClient(cfg config.Config, baseURL string) *Client {
 }
 
 func (c *Client) repoURL(path string) string {
-	return fmt.Sprintf("%s/repos/%s/%s/contents/%s", c.baseURL, c.cfg.Owner, c.cfg.Repo, path)
+	segments := strings.Split(path, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return fmt.Sprintf("%s/repos/%s/%s/contents/%s",
+		c.baseURL,
+		url.PathEscape(c.cfg.Owner),
+		url.PathEscape(c.cfg.Repo),
+		strings.Join(segments, "/"),
+	)
 }
 
 func (c *Client) do(ctx context.Context, method, url string, body any) (*http.Response, error) {
 	var r io.Reader
 	if body != nil {
-		b, _ := json.Marshal(body)
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshal request body: %w", err)
+		}
 		r = bytes.NewReader(b)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, url, r)
@@ -115,24 +143,33 @@ func (c *Client) CommitFile(ctx context.Context, path, appendContent, message st
 }
 
 func (c *Client) PutContent(ctx context.Context, path, content, message string) error {
-	f, err := c.GetFile(ctx, path)
-	if err != nil {
-		return err
+	for attempt := range 3 {
+		f, err := c.GetFile(ctx, path)
+		if err != nil {
+			return err
+		}
+		body := map[string]any{
+			"message": message,
+			"content": base64.StdEncoding.EncodeToString([]byte(content)),
+		}
+		if f.Exists {
+			body["sha"] = f.SHA
+		}
+		resp, err := c.do(ctx, http.MethodPut, c.repoURL(path), body)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+		if resp.StatusCode == 409 {
+			if attempt == 2 {
+				return fmt.Errorf("team-memory: conflict writing %s after 3 retries", path)
+			}
+			continue
+		}
+		if resp.StatusCode >= 400 {
+			return fmt.Errorf("github PUT %s: status %d", path, resp.StatusCode)
+		}
+		return nil
 	}
-	body := map[string]any{
-		"message": message,
-		"content": base64.StdEncoding.EncodeToString([]byte(content)),
-	}
-	if f.Exists {
-		body["sha"] = f.SHA
-	}
-	resp, err := c.do(ctx, http.MethodPut, c.repoURL(path), body)
-	if err != nil {
-		return err
-	}
-	resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("github PUT %s: status %d", path, resp.StatusCode)
-	}
-	return nil
+	return fmt.Errorf("team-memory: conflict writing %s after 3 retries", path)
 }

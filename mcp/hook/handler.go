@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/AndrewSkea/team-memory/mcp/config"
+	"github.com/AndrewSkea/team-memory/mcp/github"
 	"github.com/AndrewSkea/team-memory/mcp/prompts"
 )
 
@@ -97,6 +98,10 @@ func runOnce(ctx context.Context, cfg config.Config, transcript []Message, sourc
 
 	target := result.TargetFile
 	if result.Unsure || target == "" {
+		target = "UNSURE.md"
+	}
+	if err := github.ValidatePath(target); err != nil {
+		// LLM returned a malformed/dangerous path — fall back to UNSURE.md.
 		target = "UNSURE.md"
 	}
 

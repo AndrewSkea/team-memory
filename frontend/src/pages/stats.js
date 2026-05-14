@@ -1,6 +1,7 @@
 import { GitHubClient } from "../services/github.js";
 import { Cache } from "../services/cache.js";
 import { computeStats } from "../services/stats.js";
+import { escapeHtml } from "../services/html.js";
 
 export function renderStats(root, { config, toast }) {
   root.innerHTML = `
@@ -32,12 +33,12 @@ export function renderStats(root, { config, toast }) {
       ${bar("PreCompact hook", s.bySource.PreCompact, s.total, "#8b6914")}
       ${bar("UI", s.bySource.UI, s.total, "#3d9e5e")}
       <p style="margin-top:14px;font-size:12px;color:var(--muted);">
-        Repo: <a href="https://github.com/${config.owner}/${config.repo}" target="_blank">${config.owner}/${config.repo}</a>
+        Repo: <a href="https://github.com/${encodeURIComponent(config.owner)}/${encodeURIComponent(config.repo)}" target="_blank" rel="noopener noreferrer">${escapeHtml(config.owner)}/${escapeHtml(config.repo)}</a>
       </p>
     `;
   }).catch(e => {
     document.getElementById("stats-body").innerHTML =
-      `<p style="color:var(--danger);font-size:14px;">Failed to load: ${e.message}</p>`;
+      `<p style="color:var(--danger);font-size:14px;">Failed to load: ${escapeHtml(e.message)}</p>`;
   });
 }
 

@@ -69,7 +69,7 @@ func TestFrontendPages(t *testing.T) {
 		"/src/pages/remember.js",
 		"/src/pages/lookup.js",
 		"/src/pages/stats.js",
-		"/src/pages/stale.js",
+		"/src/pages/meetings.js",
 		"/src/pages/setup.js",
 	}
 	h := newTestHandler()
@@ -100,6 +100,7 @@ func TestFrontend404(t *testing.T) {
 func TestAPIHealthViaMainHandler(t *testing.T) {
 	h := newTestHandler()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Host = "127.0.0.1:7438"
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 
@@ -117,6 +118,7 @@ func TestAPIRouteViaMainHandler(t *testing.T) {
 	// POST to /v1/categorize with bad JSON should return 400, not serve index.html
 	h := newTestHandler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/categorize", strings.NewReader("bad"))
+	req.Host = "127.0.0.1:7438"
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 

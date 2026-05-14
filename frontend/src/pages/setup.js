@@ -1,4 +1,5 @@
 import { GitHubClient } from "../services/github.js";
+import { escapeHtml } from "../services/html.js";
 
 const SEED_INDEX = `# INDEX for team-memory
 GENERAL.md | shared | general
@@ -11,11 +12,11 @@ export function renderSetup(root, { onDone, config }) {
     <div class="card">
       <h2>Setup</h2>
       <label>GitHub Personal Access Token <span class="muted">(fine-grained, contents:write on one repo)</span></label>
-      <input id="pat" type="password" value="${config.token ?? ""}" />
+      <input id="pat" type="password" value="${escapeHtml(config.token ?? "")}" />
       <label>Repository (owner/name)</label>
-      <input id="repo" type="text" placeholder="AndrewSkea/my-knowledge" value="${config.repo ?? ""}" />
+      <input id="repo" type="text" placeholder="AndrewSkea/my-knowledge" value="${escapeHtml(config.repo ?? "")}" />
       <label>Anthropic API key <span class="muted">(optional — uses local MCP if blank)</span></label>
-      <input id="anthropic" type="password" value="${config.anthropicKey ?? ""}" />
+      <input id="anthropic" type="password" value="${escapeHtml(config.anthropicKey ?? "")}" />
       <p class="muted">Credentials are stored only in this browser's localStorage. Treat this profile as the trust boundary.</p>
       <button class="primary" id="save">Save & verify</button>
       <div id="status" class="muted"></div>

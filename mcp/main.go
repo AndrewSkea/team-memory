@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/AndrewSkea/team-memory/mcp/config"
 	gh "github.com/AndrewSkea/team-memory/mcp/github"
@@ -102,7 +103,11 @@ func runOnce(cmd string) error {
 
 	client := gh.NewClient(cfg, "")
 	runner := llm.NewClaude("")
-	ctx := context.Background()
+	// Bound the one-shot hook run: Claude categorisation + GitHub commits
+	// rarely take more than a minute; cap to keep a stuck call from hanging
+	// the Claude Code session-end hook indefinitely.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
 	adapter := &githubAdapter{c: client}
 
 	switch cmd {

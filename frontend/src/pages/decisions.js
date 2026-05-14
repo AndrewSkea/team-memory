@@ -1,3 +1,5 @@
+import { escapeHtml } from "../services/html.js";
+
 export function formatDecision({ title, date, status, context, decision, consequences }) {
   const lines = [
     `### Decision: ${title}`,
@@ -68,7 +70,7 @@ export function renderDecisions(container, config, gh) {
       document.getElementById('dstatusmsg').innerHTML = '<p style="color:var(--success,green)">Saved to DECISIONS.md</p>';
       ['dtitle','dcontext','ddecision','dconsequences'].forEach(id => { document.getElementById(id).value = ''; });
     } catch (e) {
-      document.getElementById('dstatusmsg').innerHTML = `<p style="color:var(--error)">${e.message}</p>`;
+      document.getElementById('dstatusmsg').innerHTML = `<p style="color:var(--error)">${escapeHtml(e.message)}</p>`;
     } finally {
       document.getElementById('dsave').disabled = false;
       document.getElementById('dsave').textContent = 'Save decision';
