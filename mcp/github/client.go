@@ -16,7 +16,8 @@ import (
 )
 
 // validRepoPath restricts file paths to repo-relative markdown segments.
-// Rejects "..", leading "/", and anything outside [A-Za-z0-9_./-].
+// Allowed: [A-Za-z0-9_-] in each segment, separated by "/", ending in ".md".
+// Rejects "..", leading "/", spaces, and dots inside segment names.
 var validRepoPath = regexp.MustCompile(`^(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.md$`)
 
 func ValidatePath(path string) error {

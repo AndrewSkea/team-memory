@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -74,7 +75,8 @@ func (s *Server) handleCategorize(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	out, err := s.cfg.Runner.Run(ctx, prompt)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
+		log.Printf("categorize: runner failed: %v", err)
+		writeErr(w, http.StatusBadGateway, "LLM runner failed")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -112,7 +114,8 @@ func (s *Server) handleSummarize(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	out, err := s.cfg.Runner.Run(ctx, prompt)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
+		log.Printf("summarize: runner failed: %v", err)
+		writeErr(w, http.StatusBadGateway, "LLM runner failed")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -150,7 +153,8 @@ func (s *Server) handleReminder(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	out, err := s.cfg.Runner.Run(ctx, prompt)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
+		log.Printf("reminder: runner failed: %v", err)
+		writeErr(w, http.StatusBadGateway, "LLM runner failed")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -197,7 +201,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, http.StatusNotFound, "no config file")
 				return
 			}
-			writeErr(w, http.StatusInternalServerError, err.Error())
+			log.Printf("config read: %v", err)
+			writeErr(w, http.StatusInternalServerError, "could not read config")
 			return
 		}
 		writeJSON(w, http.StatusOK, cfg)
@@ -221,7 +226,8 @@ func (s *Server) handleExportConfig(w http.ResponseWriter, r *http.Request) {
 		path = config.DefaultPath()
 	}
 	if err := config.Write(path, cfg); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		log.Printf("config write: %v", err)
+		writeErr(w, http.StatusInternalServerError, "could not write config")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": path})
