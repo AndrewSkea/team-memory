@@ -77,6 +77,14 @@ Then access via `http://team-mem:7438/` (no portproxy without admin).
 
 After install, use Claude Code normally. When a session ends, `team-memory-mcp` automatically summarises it and commits a structured entry to your memory repo. Open `http://127.0.0.1:7438` to browse your knowledge base, save entries manually, or search by keyword.
 
+### Model & cost
+
+All LLM calls (categorisation, summary, reminders) go through the `claude` CLI pinned to **Haiku** (`--model haiku`). Haiku is roughly an order of magnitude cheaper than Sonnet/Opus and is more than adequate for these short, structured generations. Override per-process with the `TEAM_MEMORY_MODEL` env var if you ever want a bigger model:
+
+```sh
+TEAM_MEMORY_MODEL=sonnet team-memory-mcp
+```
+
 ---
 
 ## Privacy & Security

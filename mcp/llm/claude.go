@@ -4,26 +4,39 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
 
+// DefaultModel is the Claude model alias used for categorisation, summary and
+// reminder calls. Pinned to Haiku to keep costs low — these are short,
+// structured generations that do not benefit from a larger model. Override
+// with the TEAM_MEMORY_MODEL env var if needed.
+const DefaultModel = "haiku"
+
 type Claude struct {
-	path string
+	path  string
+	model string
 }
 
 func NewClaude(path string) *Claude {
 	if path == "" {
 		path = "claude"
 	}
-	return &Claude{path: path}
+	model := os.Getenv("TEAM_MEMORY_MODEL")
+	if model == "" {
+		model = DefaultModel
+	}
+	return &Claude{path: path, model: model}
 }
 
-// Run invokes `claude -p <prompt> --output-format stream-json --verbose` and
-// returns the assembled assistant text.
+// Run invokes `claude -p <prompt> --model <model> --output-format stream-json --verbose`
+// and returns the assembled assistant text.
 func (c *Claude) Run(ctx context.Context, prompt string) (string, error) {
 	cmd := exec.CommandContext(ctx, c.path,
 		"-p", prompt,
+		"--model", c.model,
 		"--output-format", "stream-json",
 		"--verbose",
 	)
