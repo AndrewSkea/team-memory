@@ -28,6 +28,11 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
       </div>
 
       <div id="section-general" style="display:flex;flex-direction:column;gap:10px">
+        <div class="drop-zone" id="mdrop" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" style="display:block;margin:0 auto 6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Drop an Outlook invite (.msg) to auto-fill
+          <input type="file" accept=".msg" id="mfile">
+        </div>
         <textarea id="text" placeholder="Describe a useful pattern, a gotcha, a workflow tip, or anything worth sharing with your team…"></textarea>
         <label class="checkbox-row">
           <input type="checkbox" id="unsure">
@@ -95,11 +100,6 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
       </div>
 
       <div id="section-reminder" style="display:none;flex-direction:column;gap:10px">
-        <div class="drop-zone" id="rdrop">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" style="display:block;margin:0 auto 6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          Drop an email (.msg) to auto-fill, or fill in manually
-          <input type="file" accept=".msg" id="rfile">
-        </div>
         <div>
           <p class="section-label">What do you need to do?</p>
           <input id="rtitle" class="search-input" type="text" placeholder="Submit Q2 report" style="width:100%">
@@ -144,6 +144,7 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
     $("#raw").style.display               = isSpecial ? 'none' : '';
     const labels = { Decision: 'Save decision', Action: 'Add action', Reminder: 'Save reminder' };
     $("#save-label").textContent = labels[type] ?? 'Save to memory';
+    $("#mdrop").style.display = type === 'Meeting Notes' ? '' : 'none';
     if (type === 'Unsure') $("#unsure").checked = true;
     else if (!isSpecial) $("#unsure").checked = false;
   }
@@ -162,25 +163,28 @@ export function renderRemember(root, { config, toast, forgetAuth }) {
     $("#text").value = await f.text();
   };
 
-  // .msg drag-drop for Reminder
+  // .msg drag-drop for Meeting Notes
   function handleMsgFile(file) {
     if (!file || !file.name.endsWith('.msg')) return;
     file.arrayBuffer().then(buf => {
       try {
-        const { subject, date, body } = parseMsgFile(buf);
-        if (subject) $("#rtitle").value = subject;
-        if (date) $("#rdate").value = date.toISOString().slice(0, 10);
-        if (body) $("#rdetails").value = body.trim().slice(0, 1000);
+        const { subject, date, displayTo, body } = parseMsgFile(buf);
+        const parts = [];
+        if (subject) parts.push(`Meeting: ${subject}`);
+        if (date) parts.push(`Date: ${date.toISOString().slice(0, 10)}`);
+        if (displayTo) parts.push(`Attendees: ${displayTo}`);
+        if (body) parts.push('', body.trim().slice(0, 2000));
+        $("#text").value = parts.join('\n');
       } catch {
         toast("Could not parse .msg file", true);
       }
     });
   }
-  const drop = $("#rdrop");
+  const drop = $("#mdrop");
   drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
   drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag-over'); handleMsgFile(e.dataTransfer.files[0]); });
-  $("#rfile").addEventListener('change', e => handleMsgFile(e.target.files[0]));
+  $("#mfile").addEventListener('change', e => handleMsgFile(e.target.files[0]));
 
   const SAVE_ICON = `<svg viewBox="0 0 16 16"><path d="M14 2H9l-7 7 5 5 7-7V2z"/><circle cx="12" cy="4" r="1.2" fill="currentColor" stroke="none"/></svg>`;
   const RAW_ICON  = `<svg viewBox="0 0 16 16"><path d="M2 2h9l3 3v9H2V2z"/><rect x="4" y="9" width="8" height="5" rx="1"/><rect x="4" y="2" width="6" height="4" rx="1"/></svg>`;
