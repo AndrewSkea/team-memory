@@ -4,7 +4,7 @@
 
 **Shared, version-controlled knowledge base your whole team builds together**
 
-Git-saved, but locally in your CLI or UI.
+Locally run in your CLI or UI, backed up to your git knowledge repo automatically
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
