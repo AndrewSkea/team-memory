@@ -2,7 +2,9 @@
 
 # team-memory
 
-**Shared, version-controlled knowledge base your whole team builds together — one note at a time.**
+**Shared, version-controlled knowledge base your whole team builds together**
+
+Git-saved, but locally in your CLI or UI.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
