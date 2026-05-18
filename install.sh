@@ -215,6 +215,24 @@ with open(path, 'w') as f:
     json.dump(data, f, indent=2)
 PYEOF
 
+# ── install Claude Code slash commands ───────────────────────────────────────
+COMMANDS_DIR="$HOME/.claude/commands"
+mkdir -p "$COMMANDS_DIR"
+
+cat > "$COMMANDS_DIR/memory-search.md" <<'CMDEOF'
+Search team memory for: $ARGUMENTS
+
+Use the `lookup` MCP tool with "$ARGUMENTS" as the query. Present the results clearly, grouped by source file. If no results are found, say so briefly.
+CMDEOF
+
+cat > "$COMMANDS_DIR/memory-add.md" <<'CMDEOF'
+Save the following note to team memory: $ARGUMENTS
+
+Use the Bash tool to POST to http://127.0.0.1:7438/v1/quick-add with JSON body {"text": "$ARGUMENTS", "title": ""}. Properly JSON-encode the text. Report which file the entry was saved to. If the server is not running, say so clearly and suggest starting it with `team-memory-mcp`.
+CMDEOF
+
+echo "  Commands: $COMMANDS_DIR  (memory-search, memory-add)"
+
 # ── service setup ─────────────────────────────────────────────────────────────
 PORT=7438
 
