@@ -220,7 +220,9 @@ func TestQuickAdd_UnsureFallsBackToGeneral(t *testing.T) {
 		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
 	}
 	var resp map[string]any
-	json.NewDecoder(w.Body).Decode(&resp)
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("bad json: %v", err)
+	}
 	if resp["file"] != "GENERAL.md" {
 		t.Errorf("file = %v, want GENERAL.md (unsure fallback)", resp["file"])
 	}
