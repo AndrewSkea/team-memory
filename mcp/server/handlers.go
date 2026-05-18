@@ -201,6 +201,7 @@ func (s *Server) handleQuickAdd(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusMethodNotAllowed, "POST only")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
 	var req quickAddReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
@@ -252,12 +253,17 @@ func (s *Server) handleQuickAdd(w http.ResponseWriter, r *http.Request) {
 
 	title := req.Title
 	if title == "" {
-		// Derive title from first sentence (up to 60 chars).
 		t := strings.TrimSpace(req.Text)
-		if i := strings.IndexAny(t, ".!?\n"); i > 0 && i < 60 {
-			title = t[:i]
-		} else if len(t) > 60 {
-			title = t[:60]
+		runes := []rune(t)
+		if i := strings.IndexAny(t, ".!?\n"); i > 0 {
+			// i is a byte offset; convert sentence to runes and cap at 60
+			sentence := []rune(t[:i])
+			if len(sentence) > 60 {
+				sentence = sentence[:60]
+			}
+			title = string(sentence)
+		} else if len(runes) > 60 {
+			title = string(runes[:60])
 		} else {
 			title = t
 		}
