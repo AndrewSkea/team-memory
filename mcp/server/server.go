@@ -4,17 +4,25 @@ import (
 	"context"
 	"net/http"
 	"os/exec"
+
+	gh "github.com/AndrewSkea/team-memory/mcp/github"
 )
 
 type LLMRunner interface {
 	Run(ctx context.Context, prompt string) (string, error)
 }
 
+type GitHubClient interface {
+	GetFile(ctx context.Context, path string) (gh.FileInfo, error)
+	CommitFile(ctx context.Context, path, appendContent, message string) error
+}
+
 type Config struct {
-	ClaudePath string
-	Runner     LLMRunner // overrideable for tests
-	ConfigPath string    // path to config.json; empty = config.DefaultPath()
-	Version    string    // injected by goreleaser ldflags; empty = "dev"
+	ClaudePath   string
+	Runner       LLMRunner
+	ConfigPath   string
+	Version      string
+	GitHubClient GitHubClient // optional; if nil, quick-add reads config per-request
 }
 
 type Server struct {
