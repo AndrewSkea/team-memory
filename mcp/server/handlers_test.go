@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	gh "github.com/AndrewSkea/team-memory/mcp/github"
 )
 
 func TestHealth(t *testing.T) {
@@ -146,5 +148,96 @@ func TestExportConfig(t *testing.T) {
 	}
 	if _, err := os.Stat(cfgPath); err != nil {
 		t.Fatal("config file not written")
+	}
+}
+
+type fakeGitHub struct {
+	index     string            // content returned for INDEX.md
+	committed map[string]string // path → appended content
+	commitErr error
+}
+
+func newFakeGitHub(index string) *fakeGitHub {
+	return &fakeGitHub{index: index, committed: make(map[string]string)}
+}
+
+func (f *fakeGitHub) GetFile(_ context.Context, path string) (gh.FileInfo, error) {
+	if path == "INDEX.md" {
+		return gh.FileInfo{Content: f.index, Exists: true}, nil
+	}
+	return gh.FileInfo{Exists: false}, nil
+}
+
+func (f *fakeGitHub) CommitFile(_ context.Context, path, appendContent, _ string) error {
+	if f.commitErr != nil {
+		return f.commitErr
+	}
+	f.committed[path] += appendContent
+	return nil
+}
+
+func TestQuickAdd_SavesEntry(t *testing.T) {
+	runner := &fakeRunner{out: `{"target_file":"DECISIONS.md","short_title":"Use Redis","one_sentence_summary":"We chose Redis for caching.","bullets":["Fast","Simple"],"tags":"infra","unsure":false}`}
+	ghClient := newFakeGitHub("DECISIONS.md | shared | decisions\n")
+	srv := New(Config{Runner: runner, GitHubClient: ghClient})
+
+	body := `{"text":"We decided to use Redis for caching because it is fast.","title":""}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/quick-add", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("bad json: %v", err)
+	}
+	if resp["ok"] != true {
+		t.Errorf("ok = %v, want true", resp["ok"])
+	}
+	if resp["file"] != "DECISIONS.md" {
+		t.Errorf("file = %v, want DECISIONS.md", resp["file"])
+	}
+	if _, saved := ghClient.committed["DECISIONS.md"]; !saved {
+		t.Error("nothing committed to DECISIONS.md")
+	}
+}
+
+func TestQuickAdd_UnsureFallsBackToGeneral(t *testing.T) {
+	runner := &fakeRunner{out: `{"target_file":"UNSURE.md","short_title":"x","one_sentence_summary":"y","bullets":[],"tags":"","unsure":true}`}
+	ghClient := newFakeGitHub("")
+	srv := New(Config{Runner: runner, GitHubClient: ghClient})
+
+	body := `{"text":"Random thought","title":""}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/quick-add", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["file"] != "GENERAL.md" {
+		t.Errorf("file = %v, want GENERAL.md (unsure fallback)", resp["file"])
+	}
+}
+
+func TestQuickAdd_NoGitHubClient_Returns503(t *testing.T) {
+	// No GitHubClient and no config file → 503
+	srv := New(Config{
+		Runner:     &fakeRunner{},
+		ConfigPath: filepath.Join(t.TempDir(), "nonexistent.json"),
+	})
+	body := `{"text":"hello","title":""}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/quick-add", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", w.Code)
 	}
 }
