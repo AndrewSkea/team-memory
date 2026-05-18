@@ -261,6 +261,50 @@ Write-Host "team-memory-mcp installed OK"
 Write-Host ""
 Write-Host "  Binary:  $BinDir\$Binary.exe"
 Write-Host "  Config:  $env:APPDATA\team-memory\config.json"
+# ── install Claude Code slash commands ───────────────────────────────────────
+$CommandsDir = "$env:USERPROFILE\.claude\commands"
+if (-not (Test-Path $CommandsDir)) { New-Item -ItemType Directory -Path $CommandsDir | Out-Null }
+
+$SearchCmd = @'
+Search team memory for: $ARGUMENTS
+
+Use the `lookup` MCP tool with "$ARGUMENTS" as the query. Present the results clearly, grouped by source file. If no results are found, say so briefly.
+'@
+[System.IO.File]::WriteAllText(
+    "$CommandsDir\memory-search.md",
+    $SearchCmd,
+    (New-Object System.Text.UTF8Encoding $false)
+)
+
+$AddCmd = @'
+Save the following note to team memory: $ARGUMENTS
+
+Use the Bash tool to run this command — Python handles JSON encoding so quotes and special characters work correctly:
+
+```bash
+python3 << 'PYEOF'
+import json, urllib.request
+note = """$ARGUMENTS"""
+body = json.dumps({"text": note, "title": ""}).encode("utf-8")
+req = urllib.request.Request(
+    "http://127.0.0.1:7438/v1/quick-add",
+    body,
+    {"Content-Type": "application/json"}
+)
+with urllib.request.urlopen(req) as resp:
+    print(resp.read().decode("utf-8"))
+PYEOF
+```
+
+Parse the response JSON and report the `file` field (e.g. "Saved to DECISIONS.md"). If connection is refused, the server is not running — start it with `team-memory-mcp`.
+'@
+[System.IO.File]::WriteAllText(
+    "$CommandsDir\memory-add.md",
+    $AddCmd,
+    (New-Object System.Text.UTF8Encoding $false)
+)
+
+Write-Host "  Commands: $CommandsDir  (memory-search, memory-add)"
 Write-Host "  Hooks:   $env:USERPROFILE\.claude\settings.json  (Stop, PreCompact)"
 Write-Host "  MCP:     $env:USERPROFILE\.claude.json           (team-memory server)"
 Write-Host "  Web UI:  $WebUrl"
