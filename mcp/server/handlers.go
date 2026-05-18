@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/AndrewSkea/team-memory/mcp/config"
+	gh "github.com/AndrewSkea/team-memory/mcp/github"
+	"github.com/AndrewSkea/team-memory/mcp/hook"
 	"github.com/AndrewSkea/team-memory/mcp/prompts"
 )
 
@@ -20,6 +22,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/summarize", s.handleSummarize)
 	s.mux.HandleFunc("/v1/export-config", s.handleExportConfig)
 	s.mux.HandleFunc("/v1/reminder", s.handleReminder)
+	s.mux.HandleFunc("/v1/quick-add", s.handleQuickAdd)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -186,6 +189,147 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+type quickAddReq struct {
+	Text  string `json:"text"`
+	Title string `json:"title"`
+}
+
+func (s *Server) handleQuickAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "POST only")
+		return
+	}
+	var req quickAddReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Text) == "" {
+		writeErr(w, http.StatusBadRequest, "text is required")
+		return
+	}
+
+	client := s.cfg.GitHubClient
+	if client == nil {
+		cfgPath := s.cfg.ConfigPath
+		if cfgPath == "" {
+			cfgPath = config.DefaultPath()
+		}
+		cfg, err := config.Read(cfgPath)
+		if err != nil {
+			if config.IsMissing(err) {
+				writeErr(w, http.StatusServiceUnavailable, "no config found — open the web UI, complete Setup, click 'Export to CLI config'")
+				return
+			}
+			log.Printf("quick-add: config read: %v", err)
+			writeErr(w, http.StatusInternalServerError, "could not read config")
+			return
+		}
+		client = gh.NewClient(cfg, "")
+	}
+
+	if s.cfg.Runner == nil {
+		writeErr(w, http.StatusServiceUnavailable, "no LLM runner configured")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	// Fetch INDEX.md so the LLM can pick the right file.
+	idx, err := client.GetFile(ctx, "INDEX.md")
+	if err != nil {
+		log.Printf("quick-add: get INDEX.md: %v", err)
+		writeErr(w, http.StatusBadGateway, "could not read INDEX.md from GitHub")
+		return
+	}
+	indexContent := ""
+	if idx.Exists {
+		indexContent = idx.Content
+	}
+
+	title := req.Title
+	if title == "" {
+		// Derive title from first sentence (up to 60 chars).
+		t := strings.TrimSpace(req.Text)
+		if i := strings.IndexAny(t, ".!?\n"); i > 0 && i < 60 {
+			title = t[:i]
+		} else if len(t) > 60 {
+			title = t[:60]
+		} else {
+			title = t
+		}
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"scope":     "Team",
+		"type":      "General",
+		"text":      req.Text,
+		"source":    "CLI",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
+	prompt := prompts.Categorize +
+		"\n\nINDEX:\n" + indexContent +
+		"\nPAYLOAD:\n" + string(payload)
+
+	out, err := s.cfg.Runner.Run(ctx, prompt)
+	if err != nil {
+		log.Printf("quick-add: categorize runner: %v", err)
+		writeErr(w, http.StatusBadGateway, "LLM runner failed")
+		return
+	}
+	out = stripFences(out)
+
+	type categorizeResult struct {
+		TargetFile         string   `json:"target_file"`
+		ShortTitle         string   `json:"short_title"`
+		OneSentenceSummary string   `json:"one_sentence_summary"`
+		Bullets            []string `json:"bullets"`
+		Tags               string   `json:"tags"`
+		Unsure             bool     `json:"unsure"`
+	}
+	var cat categorizeResult
+	if err := json.Unmarshal([]byte(out), &cat); err != nil {
+		log.Printf("quick-add: parse categorize output: %v (raw: %.300s)", err, out)
+		// Fall back to GENERAL.md rather than failing entirely.
+		cat = categorizeResult{TargetFile: "GENERAL.md", ShortTitle: title}
+	}
+
+	target := cat.TargetFile
+	if cat.Unsure || target == "" || gh.ValidatePath(target) != nil {
+		target = "GENERAL.md"
+	}
+
+	if cat.ShortTitle != "" {
+		title = cat.ShortTitle
+	}
+	summary := cat.OneSentenceSummary
+	if summary == "" {
+		summary = req.Text
+	}
+
+	entry := hook.Entry{
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		ShortTitle: title,
+		Scope:      "Team",
+		Type:       "General",
+		Tags:       cat.Tags,
+		Source:     "CLI",
+		Summary:    summary,
+		Bullets:    cat.Bullets,
+		Full:       req.Text,
+	}
+	block := "\n" + hook.RenderEntry(entry)
+
+	if err := client.CommitFile(ctx, target, block, "team-memory: add entry to "+target); err != nil {
+		log.Printf("quick-add: commit %s: %v", target, err)
+		writeErr(w, http.StatusBadGateway, "could not commit to GitHub: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "file": target})
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
