@@ -282,9 +282,9 @@ Save the following note to team memory: $ARGUMENTS
 Use the Bash tool to run this command — Python handles JSON encoding so quotes and special characters work correctly:
 
 ```bash
-python3 << 'PYEOF'
-import json, urllib.request
-note = """$ARGUMENTS"""
+python3 - "$ARGUMENTS" << 'PYEOF'
+import json, sys, urllib.request
+note = sys.argv[1]
 body = json.dumps({"text": note, "title": ""}).encode("utf-8")
 req = urllib.request.Request(
     "http://127.0.0.1:7438/v1/quick-add",

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -241,5 +242,48 @@ func TestQuickAdd_NoGitHubClient_Returns503(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", w.Code)
+	}
+}
+
+func TestQuickAdd_CommitError_Returns502(t *testing.T) {
+	runner := &fakeRunner{out: `{"target_file":"GENERAL.md","short_title":"x","one_sentence_summary":"y","bullets":[],"tags":"","unsure":false}`}
+	ghClient := newFakeGitHub("")
+	ghClient.commitErr = fmt.Errorf("github: 409 conflict")
+	srv := New(Config{Runner: runner, GitHubClient: ghClient})
+
+	body := `{"text":"test note","title":""}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/quick-add", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502", w.Code)
+	}
+}
+
+func TestQuickAdd_InvalidLLMResponse_FallsBackToGeneral(t *testing.T) {
+	runner := &fakeRunner{out: "not valid json at all"}
+	ghClient := newFakeGitHub("")
+	srv := New(Config{Runner: runner, GitHubClient: ghClient})
+
+	body := `{"text":"some note","title":""}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/quick-add", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("bad json: %v", err)
+	}
+	if resp["file"] != "GENERAL.md" {
+		t.Errorf("file = %v, want GENERAL.md (LLM parse failure fallback)", resp["file"])
+	}
+	if _, saved := ghClient.committed["GENERAL.md"]; !saved {
+		t.Error("nothing committed to GENERAL.md on LLM parse failure")
 	}
 }
