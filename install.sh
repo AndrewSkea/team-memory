@@ -228,7 +228,24 @@ CMDEOF
 cat > "$COMMANDS_DIR/memory-add.md" <<'CMDEOF'
 Save the following note to team memory: $ARGUMENTS
 
-Use the Bash tool to POST to http://127.0.0.1:7438/v1/quick-add with JSON body {"text": "$ARGUMENTS", "title": ""}. Properly JSON-encode the text. Report which file the entry was saved to. If the server is not running, say so clearly and suggest starting it with `team-memory-mcp`.
+Use the Bash tool to run this command — Python handles JSON encoding so quotes and special characters work correctly:
+
+```bash
+python3 << 'PYEOF'
+import json, urllib.request
+note = """$ARGUMENTS"""
+body = json.dumps({"text": note, "title": ""}).encode("utf-8")
+req = urllib.request.Request(
+    "http://127.0.0.1:7438/v1/quick-add",
+    body,
+    {"Content-Type": "application/json"}
+)
+with urllib.request.urlopen(req) as resp:
+    print(resp.read().decode("utf-8"))
+PYEOF
+```
+
+Parse the response JSON and report the `file` field (e.g. "Saved to DECISIONS.md"). If connection is refused, the server is not running — start it with `team-memory-mcp`.
 CMDEOF
 
 echo "  Commands: $COMMANDS_DIR  (memory-search, memory-add)"
