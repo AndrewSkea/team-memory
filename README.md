@@ -1,5 +1,7 @@
 <div align="center">
 
+![team-memory social preview](assets/social-preview.png)
+
 # team-memory
 
 **Shared, version-controlled knowledge base your whole team builds together**
