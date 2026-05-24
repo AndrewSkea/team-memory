@@ -5,6 +5,7 @@ import { renderStats } from "./pages/stats.js";
 import { renderMeetings } from './pages/meetings.js';
 import { GitHubClient } from './services/github.js';
 import { escapeHtml } from './services/html.js';
+import { initMeetingDrawer } from './components/meeting-drawer.js';
 
 const CONFIG_KEY = "team-memory:config";
 
@@ -100,5 +101,9 @@ async function bootstrap() {
     }
   }
   go("remember");
+  const cfg = loadConfig();
+  if (cfg.token && cfg.owner) {
+    initMeetingDrawer(cfg, new GitHubClient(cfg));
+  }
 }
 bootstrap();
