@@ -50,10 +50,10 @@ export function parseSeries(content) {
 function extractField(section, fieldName) {
   // Match **FieldName:** followed by value until next **AnyField:** or end
   const escaped = fieldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`\\*\\*${escaped}:\\*\\*([\\s\\S]*?)(?=\\n\\*\\*[^*]|$)`);
+  const re = new RegExp(`\\*\\*${escaped}:\\*\\*([\\s\\S]*?)(?=\\n\\*\\*|$)`);
   const m = section.match(re);
   if (!m) return '';
-  return m[1];
+  return m[1].trim();
 }
 
 export function buildSeriesFile({ title, slug, attendees, template }) {
