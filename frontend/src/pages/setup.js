@@ -17,6 +17,8 @@ export function renderSetup(root, { onDone, config }) {
       <input id="repo" type="text" placeholder="AndrewSkea/my-knowledge" value="${escapeHtml(config.repo ?? "")}" />
       <label>Anthropic API key <span class="muted">(optional — uses local MCP if blank)</span></label>
       <input id="anthropic" type="password" value="${escapeHtml(config.anthropicKey ?? "")}" />
+      <label>Codebase repo <span class="muted">(optional — owner/name, used for AI context)</span></label>
+      <input id="codebase-repo" type="text" placeholder="myorg/my-service" value="${escapeHtml(config.codebaseOwner && config.codebaseRepo ? `${config.codebaseOwner}/${config.codebaseRepo}` : '')}" />
       <p class="muted">Credentials are stored only in this browser's localStorage. Treat this profile as the trust boundary.</p>
       <button class="primary" id="save">Save & verify</button>
       <div id="status" class="muted"></div>
@@ -63,7 +65,9 @@ export function renderSetup(root, { onDone, config }) {
         status.textContent = "Seeded fresh repo.";
       }
       const checkFirst = $("#check-first")?.checked ?? false;
-      const next = { token, owner, repo, anthropicKey, username: user.login, check_first: checkFirst };
+      const codebaseStr = ($("#codebase-repo")?.value ?? '').trim();
+      const [codebaseOwner = '', codebaseRepo = ''] = codebaseStr.includes('/') ? codebaseStr.split('/') : [];
+      const next = { token, owner, repo, anthropicKey, username: user.login, check_first: checkFirst, codebaseOwner, codebaseRepo };
       onDone(next);
       $("#cli-section").style.display = "";
     } catch (e) {
