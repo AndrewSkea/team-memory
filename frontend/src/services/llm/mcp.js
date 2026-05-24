@@ -36,6 +36,14 @@ export class LocalMCP {
     try { return JSON.parse(t); } catch { throw new Error("mcp returned non-JSON: " + t.slice(0, 200)); }
   }
 
+  async enrich() {
+    throw new Error("Note enrichment requires an Anthropic API key — add one in Setup.");
+  }
+
+  async generateRequirements() {
+    throw new Error("Requirements generation requires an Anthropic API key — add one in Setup.");
+  }
+
   async formatReminder({ title, dueDate, details }) {
     const r = await this.fetch(`${this.url}/v1/reminder`, {
       method: "POST",

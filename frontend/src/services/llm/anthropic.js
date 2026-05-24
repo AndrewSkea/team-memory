@@ -48,5 +48,39 @@ export class AnthropicDirect {
     return this._call(sys, JSON.stringify({ title, due_date: dueDate, details }));
   }
 
+  async _callText(systemPrompt, userContent) {
+    const res = await this.fetch(ANTHROPIC_API, {
+      method: "POST",
+      headers: {
+        "x-api-key": this.apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userContent }],
+      }),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`anthropic ${res.status}: ${t.slice(0, 200)}`);
+    }
+    const j = await res.json();
+    return (j.content ?? []).filter(c => c.type === "text").map(c => c.text).join("");
+  }
+
+  async enrich({ seriesContent, currentNotes, indexContent, codebaseContent }) {
+    const sys = await this.loadPrompt("enrich-meeting");
+    return this._callText(sys, JSON.stringify({ seriesContent, currentNotes, indexContent, codebaseContent }));
+  }
+
+  async generateRequirements({ occurrencesContent, indexContent, codebaseContent }) {
+    const sys = await this.loadPrompt("generate-requirements");
+    return this._callText(sys, JSON.stringify({ occurrencesContent, indexContent, codebaseContent }));
+  }
+
   async healthy() { return true; }
 }
