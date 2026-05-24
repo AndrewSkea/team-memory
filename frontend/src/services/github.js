@@ -79,6 +79,13 @@ export class GitHubClient {
     }
     return { ok: false, kind: "conflict", message: "exceeded 3 retries" };
   }
+
+  async getDir(path) {
+    const r = await this._req(`/repos/${this.owner}/${this.repo}/contents/${encodeURIComponent(path)}`);
+    if (r.status === 404) return [];
+    if (!r.ok) throw new Error(`getDir ${path}: ${r.status}`);
+    return r.json();
+  }
 }
 
 function classifyStatus(s) {
