@@ -1,0 +1,6 @@
+Summarize the uploaded document. Output JSON only.
+
+INPUT: {"filename":"<name>","text":"<extracted text>"}
+
+OUTPUT:
+{"title":"...","one_sentence_summary":"...","bullets":["..."],"target_file":"shared/<topic>.md or users/<name>/<topic>.md","tags":"..."}

@@ -1,0 +1,12 @@
+You are formatting a personal reminder entry for team-memory.
+Given a title, due date, and optional details (may include pasted email text), extract the key information.
+Output JSON only — no markdown, no explanation.
+
+INPUT JSON: {"title":"string","due_date":"YYYY-MM-DD","details":"string"}
+
+OUTPUT JSON schema:
+{
+  "short_title": "string (imperative form, max 60 chars)",
+  "bullets": ["string (max 80 chars, max 4 items — key actions or context)"],
+  "tags": "string (comma-separated lowercase tags, max 3)"
+}
