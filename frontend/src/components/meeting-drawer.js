@@ -171,7 +171,8 @@ export function initMeetingDrawer(config, gh) {
     body.querySelectorAll('[data-histidx]').forEach(btn => {
       btn.addEventListener('click', () => {
         const i = btn.dataset.histidx;
-        document.getElementById(`hist-item-${i}`).classList.toggle('meeting-history__item--open');
+        const item = document.getElementById(`hist-item-${i}`);
+        if (item) item.classList.toggle('meeting-history__item--open');
       });
     });
 
@@ -307,6 +308,7 @@ export function initMeetingDrawer(config, gh) {
       if (!llm) throw new Error('No AI backend — add Anthropic API key in Setup.');
       const checked = [...document.querySelectorAll('#mdscope input[type=checkbox]:checked')];
       if (!checked.length) throw new Error('Select at least one session.');
+      if (!state.series) throw new Error('No series loaded. Save a meeting first.');
       const selected = checked.map(cb => state.series.occurrences[parseInt(cb.dataset.occidx)]);
       const occurrencesContent = selected.map(o =>
         `## ${o.date}\nNotes: ${o.notes}\nDecisions: ${o.decisions}\nActions: ${o.actions}`
@@ -321,8 +323,7 @@ export function initMeetingDrawer(config, gh) {
       const result = await llm.generateRequirements({ occurrencesContent, indexContent: indexFile.content ?? '', codebaseContent });
       outputEl.textContent = result;
       const saveBtn = document.getElementById('mdreq-save');
-      saveBtn.style.display = '';
-      saveBtn.dataset.content = result;
+      if (saveBtn) { saveBtn.style.display = ''; saveBtn.dataset.content = result; }
     } catch (e) {
       outputEl.style.display = 'none';
       statusEl.innerHTML = `<p style="color:var(--danger);font-size:12px">${escHtml(e.message)}</p>`;
