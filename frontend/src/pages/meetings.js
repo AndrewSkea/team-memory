@@ -1,5 +1,6 @@
 import { parseMsgFile } from '../services/msgparser.js';
 import { escapeHtml } from '../services/html.js';
+import { parseSeries } from '../services/meetings-series.js';
 
 export const MEETING_TEMPLATES = [
   { name: 'Blank',            fill: { title: '',                     decisions: '',                                      actions: '' } },
@@ -32,98 +33,84 @@ export function formatMeeting({ title, date, attendees, decisions, actionItems }
 }
 
 export function renderMeetings(container, config, gh) {
-  const today = new Date().toISOString().slice(0, 10);
   container.innerHTML = `
     <div class="card">
-      <div class="drop-zone" id="mdrop">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20" style="display:block;margin:0 auto 6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        Drop an Outlook invite (.msg) or click to browse
-        <input type="file" accept=".msg" id="mfile">
-      </div>
-      <div class="template-row">
-        <label for="mtmpl">Template</label>
-        <select id="mtmpl">
-          ${MEETING_TEMPLATES.map(t => `<option value="${t.name}">${t.name}</option>`).join('')}
-        </select>
-      </div>
-      <p class="section-label">Meeting title</p>
-      <input id="mtitle" class="search-input" type="text" placeholder="Sprint Planning" style="width:100%;box-sizing:border-box;margin-bottom:12px">
-      <div class="fields-row">
-        <div>
-          <p class="section-label">Date</p>
-          <input id="mdate" class="search-input" type="date" value="${today}" style="width:100%;box-sizing:border-box">
-        </div>
-        <div>
-          <p class="section-label">Attendees</p>
-          <input id="mattendees" class="search-input" type="text" placeholder="Alice, Bob, Charlie" style="width:100%;box-sizing:border-box">
-        </div>
-      </div>
-      <p class="section-label" style="margin-top:12px">Decisions (one per line)</p>
-      <textarea id="mdecisions" class="textarea" placeholder="We decided to...&#10;We agreed on..."></textarea>
-      <p class="section-label">Action items (one per line, format: Owner: task)</p>
-      <textarea id="mactions" class="textarea" placeholder="Alice: set up project board&#10;Bob: draft sprint template"></textarea>
-      <div class="divider"></div>
-      <div class="button-row">
-        <button id="msave" class="btn-primary">Save meeting notes</button>
-      </div>
-      <div id="mstatus"></div>
+      <p class="section-label">Meeting Series</p>
+      <div id="mseries-list"><p style="color:var(--muted);font-size:13px">Loading…</p></div>
+      <div id="mseries-detail" style="display:none"></div>
     </div>`;
 
-  document.getElementById('mtmpl').addEventListener('change', e => {
-    const f = applyMeetingTemplate(e.target.value);
-    if (f.title) document.getElementById('mtitle').value = f.title;
-    document.getElementById('mdecisions').value = f.decisions;
-    document.getElementById('mactions').value   = f.actions;
-  });
+  loadSeriesList(gh);
+}
 
-  function handleMsgFile(file) {
-    if (!file || !file.name.endsWith('.msg')) return;
-    file.arrayBuffer().then(buf => {
-      try {
-        const { subject, date, displayTo, displayCc, body } = parseMsgFile(buf);
-        if (subject) document.getElementById('mtitle').value = subject;
-        if (date) document.getElementById('mdate').value = date.toISOString().slice(0, 10);
-        const attendees = [displayTo, displayCc].filter(Boolean).join(', ');
-        if (attendees) document.getElementById('mattendees').value = attendees;
-        if (body) document.getElementById('mdecisions').value = body.trim();
-        document.getElementById('mstatus').innerHTML = '<p style="color:var(--green)">Populated from .msg file — review and edit before saving</p>';
-      } catch {
-        document.getElementById('mstatus').innerHTML = '<p style="color:var(--danger)">Could not parse .msg file</p>';
-      }
-    });
-  }
-
-  const drop = document.getElementById('mdrop');
-  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
-  drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
-  drop.addEventListener('drop', e => {
-    e.preventDefault();
-    drop.classList.remove('drag-over');
-    handleMsgFile(e.dataTransfer.files[0]);
-  });
-  document.getElementById('mfile').addEventListener('change', e => handleMsgFile(e.target.files[0]));
-
-  document.getElementById('msave').onclick = async () => {
-    const title = document.getElementById('mtitle').value.trim();
-    if (!title) { document.getElementById('mstatus').innerHTML = '<p style="color:var(--error)">Title required</p>'; return; }
-    const md = formatMeeting({
-      title,
-      date: document.getElementById('mdate').value,
-      attendees: document.getElementById('mattendees').value,
-      decisions: document.getElementById('mdecisions').value,
-      actionItems: document.getElementById('mactions').value,
-    });
-    document.getElementById('msave').disabled = true;
-    document.getElementById('msave').textContent = 'Saving…';
-    try {
-      await gh.commitFile({ path: 'MEETINGS.md', append: md, message: `feat: add meeting notes — ${title}` });
-      document.getElementById('mstatus').innerHTML = '<p style="color:var(--success,green)">Saved to MEETINGS.md</p>';
-      ['mtitle','mattendees','mdecisions','mactions'].forEach(id => { document.getElementById(id).value = ''; });
-    } catch (e) {
-      document.getElementById('mstatus').innerHTML = `<p style="color:var(--error)">${escapeHtml(e.message)}</p>`;
-    } finally {
-      document.getElementById('msave').disabled = false;
-      document.getElementById('msave').textContent = 'Save meeting notes';
+async function loadSeriesList(gh) {
+  const listEl = document.getElementById('mseries-list');
+  if (!listEl) return;
+  try {
+    const files = await gh.getDir('meetings');
+    const mdFiles = files.filter(f => f.name.endsWith('.md'));
+    if (!mdFiles.length) {
+      listEl.innerHTML = '<p style="color:var(--muted);font-size:13px">No meeting series yet — use the calendar button to add one.</p>';
+      return;
     }
-  };
+    const rows = await Promise.all(
+      mdFiles.map(async f => {
+        const file = await gh.getFile(`meetings/${f.name}`);
+        const { frontmatter, occurrences } = parseSeries(file.content);
+        return { slug: f.name.replace('.md', ''), frontmatter, occurrences, rawContent: file.content };
+      })
+    );
+    listEl.innerHTML = rows.map(r => `
+      <div class="result-item" style="cursor:pointer" data-slug="${escapeHtml(r.slug)}">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-weight:600">${escapeHtml(r.frontmatter.title ?? r.slug)}</span>
+          <span style="font-size:11px;color:var(--muted)">${r.occurrences.length} session${r.occurrences.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">
+          Last: ${r.occurrences[0]?.date ?? 'none'} · Attendees: ${escapeHtml(r.frontmatter.attendees || '—')}
+        </div>
+      </div>
+    `).join('');
+    listEl.querySelectorAll('[data-slug]').forEach(el => {
+      el.addEventListener('click', () => {
+        const row = rows.find(r => r.slug === el.dataset.slug);
+        if (row) renderSeriesDetail(row, gh);
+      });
+    });
+  } catch (e) {
+    listEl.innerHTML = `<p style="color:var(--danger);font-size:13px">${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function renderSeriesDetail(row, gh) {
+  const detailEl = document.getElementById('mseries-detail');
+  const listEl = document.getElementById('mseries-list');
+  if (!detailEl || !listEl) return;
+  listEl.style.display = 'none';
+  detailEl.style.display = '';
+  detailEl.innerHTML = `
+    <button id="mback" style="background:none;border:none;color:var(--accent);font-size:13px;cursor:pointer;padding:0 0 12px 0">← All series</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="font-size:16px">${escapeHtml(row.frontmatter.title ?? row.slug)}</h3>
+      <button class="btn-primary" id="mdetail-genreq" style="font-size:12px;padding:6px 12px">Generate Requirements</button>
+    </div>
+    <div id="mdetail-req-status"></div>
+    ${row.occurrences.map(occ => `
+      <div class="result-item" style="margin-bottom:8px">
+        <div style="font-weight:600;margin-bottom:6px">${occ.date}</div>
+        ${occ.notes ? `<p style="font-size:12px;color:var(--text-2);margin-bottom:4px"><strong>Notes:</strong> ${escapeHtml(occ.notes)}</p>` : ''}
+        ${occ.decisions ? `<p style="font-size:12px;color:var(--text-2);margin-bottom:4px"><strong>Decisions:</strong> ${escapeHtml(occ.decisions)}</p>` : ''}
+        ${occ.actions ? `<p style="font-size:12px;color:var(--text-2)"><strong>Actions:</strong> ${escapeHtml(occ.actions)}</p>` : ''}
+      </div>
+    `).join('')}
+  `;
+  document.getElementById('mback').addEventListener('click', () => {
+    detailEl.style.display = 'none';
+    listEl.style.display = '';
+  });
+  document.getElementById('mdetail-genreq').addEventListener('click', () => {
+    const statusEl = document.getElementById('mdetail-req-status');
+    if (statusEl) statusEl.innerHTML =
+      '<p style="font-size:12px;color:var(--muted)">Open the meeting drawer (calendar button) and use the Requirements tab to generate tickets for this series.</p>';
+  });
 }
