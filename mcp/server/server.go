@@ -26,15 +26,16 @@ type Config struct {
 }
 
 type Server struct {
-	cfg Config
-	mux *http.ServeMux
+	cfg         Config
+	mux         *http.ServeMux
+	oauthNonces *nonceStore
 }
 
 func New(cfg Config) *Server {
 	if cfg.ClaudePath == "" {
 		cfg.ClaudePath = "claude"
 	}
-	s := &Server{cfg: cfg, mux: http.NewServeMux()}
+	s := &Server{cfg: cfg, mux: http.NewServeMux(), oauthNonces: newNonceStore()}
 	s.routes()
 	return s
 }

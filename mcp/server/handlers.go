@@ -23,6 +23,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/export-config", s.handleExportConfig)
 	s.mux.HandleFunc("/v1/reminder", s.handleReminder)
 	s.mux.HandleFunc("/v1/quick-add", s.handleQuickAdd)
+	s.mux.HandleFunc("/oauth/github/start", s.handleGitHubOAuthStart)
+	s.mux.HandleFunc("/oauth/github/callback", s.handleGitHubOAuthCallback)
+	s.mux.HandleFunc("/oauth/slack/start", s.handleSlackOAuthStart)
+	s.mux.HandleFunc("/oauth/slack/callback", s.handleSlackOAuthCallback)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
