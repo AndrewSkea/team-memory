@@ -16,7 +16,7 @@ export function _parseEvents(items = []) {
   }));
 }
 
-export async function listTodayMeetings(accessToken, clientId, refreshTokenFn) {
+export async function listTodayMeetings(accessToken, refreshTokenFn, fetchFn = fetch) {
   const { timeMin, timeMax } = _buildTimeRange();
   const params = new URLSearchParams({
     timeMin,
@@ -26,14 +26,14 @@ export async function listTodayMeetings(accessToken, clientId, refreshTokenFn) {
     maxResults: '10',
   });
 
-  let res = await fetch(`${CALENDAR_API}/calendars/primary/events?${params}`, {
+  let res = await fetchFn(`${CALENDAR_API}/calendars/primary/events?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
   if (res.status === 401 && refreshTokenFn) {
     const newToken = await refreshTokenFn();
     if (newToken) {
-      res = await fetch(`${CALENDAR_API}/calendars/primary/events?${params}`, {
+      res = await fetchFn(`${CALENDAR_API}/calendars/primary/events?${params}`, {
         headers: { Authorization: `Bearer ${newToken}` },
       });
     }
