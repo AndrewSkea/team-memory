@@ -44,7 +44,6 @@ export async function startGoogleOAuth(clientId) {
 export async function exchangeGoogleCode(clientId, code, state) {
   const pending = JSON.parse(sessionStorage.getItem('oauth_google_pending') || 'null');
   if (!pending || pending.state !== state) throw new Error('OAuth state mismatch');
-  sessionStorage.removeItem('oauth_google_pending');
   const redirectUri = window.location.origin + window.location.pathname;
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -57,6 +56,7 @@ export async function exchangeGoogleCode(clientId, code, state) {
       grant_type: 'authorization_code',
     }),
   });
+  sessionStorage.removeItem('oauth_google_pending');
   if (!res.ok) throw new Error(`Google token exchange failed: ${res.status}`);
   const data = await res.json();
   return { accessToken: data.access_token, refreshToken: data.refresh_token };
@@ -89,22 +89,18 @@ export function readOAuthFragment(loc = window.location) {
   const hash = loc.hash || '';
   const search = loc.search || '';
 
-  if (hash.includes('gh_token=') || hash.includes('gh_error=')) {
+  if (hash) {
     const params = new URLSearchParams(hash.slice(1));
     if (params.get('gh_token')) return { type: 'github', token: params.get('gh_token') };
     if (params.get('gh_error')) return { type: 'github_error', error: params.get('gh_error') };
-  }
-
-  if (hash.includes('slack_webhook=')) {
-    const params = new URLSearchParams(hash.slice(1));
-    return {
+    if (params.get('slack_webhook')) return {
       type: 'slack',
       webhookUrl: params.get('slack_webhook'),
       channel: params.get('slack_channel') || '',
     };
   }
 
-  if (search.includes('code=') && search.includes('state=')) {
+  if (search) {
     const params = new URLSearchParams(search.slice(1));
     if (params.get('code') && params.get('state')) {
       return { type: 'google', code: params.get('code'), state: params.get('state') };
