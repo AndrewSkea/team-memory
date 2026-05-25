@@ -11,7 +11,7 @@ export function renderSetup(root, { onDone, config }) {
   root.innerHTML = `
     <div class="card">
       <h2>Setup</h2>
-      <label>GitHub Personal Access Token <span class="muted">(fine-grained, contents:write on one repo)</span></label>
+      <label>GitHub Personal Access Token <span class="muted">(fine-grained, contents:write on one repo — or connect via OAuth in Connections ⚙)</span></label>
       <input id="pat" type="password" value="${escapeHtml(config.token ?? "")}" />
       <label>Repository (owner/name)</label>
       <input id="repo" type="text" placeholder="AndrewSkea/my-knowledge" value="${escapeHtml(config.repo ?? "")}" />
