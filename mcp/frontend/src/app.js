@@ -11,6 +11,8 @@ import { renderTopics } from './pages/topics.js';
 import { renderTimeline } from './pages/timeline.js';
 import { GitHubClient } from './services/github.js';
 import { initMeetingDrawer } from './components/meeting-drawer.js';
+import { readOAuthFragment, exchangeGoogleCode } from './services/oauth.js';
+import { initConnectionsCog } from './pages/connections.js';
 
 const CONFIG_KEY = "team-memory:config";
 
@@ -56,7 +58,7 @@ export function go(page) {
     b.classList.toggle("active", b.dataset.page === page);
   }
   updateFooter(config);
-  const gh = new GitHubClient(config);
+  const gh = new GitHubClient({ ...config, token: config.githubOAuthToken || config.token });
   if (page === "setup") {
     renderSetup(root, {
       config,
@@ -113,10 +115,47 @@ async function bootstrap() {
       }
     } catch {}
   }
+  // Handle OAuth callbacks before first render
+  const oauthResult = readOAuthFragment();
+  if (oauthResult) {
+    const cfg = loadConfig();
+    if (oauthResult.type === 'github') {
+      cfg.githubOAuthToken = oauthResult.token;
+      saveConfig(cfg);
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      toast('GitHub connected.');
+    } else if (oauthResult.type === 'github_error') {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      toast('GitHub OAuth failed: ' + oauthResult.error, true);
+    } else if (oauthResult.type === 'slack') {
+      cfg.slackWebhookUrl = oauthResult.webhookUrl;
+      cfg.slackChannel = oauthResult.channel;
+      saveConfig(cfg);
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      toast('Slack connected to ' + (oauthResult.channel || 'workspace') + '.');
+    } else if (oauthResult.type === 'google') {
+      try {
+        const cfg2 = loadConfig();
+        const { accessToken, refreshToken } = await exchangeGoogleCode(
+          cfg2.googleClientId || '', oauthResult.code, oauthResult.state
+        );
+        cfg2.googleAccessToken = accessToken;
+        cfg2.googleRefreshToken = refreshToken;
+        saveConfig(cfg2);
+        history.replaceState(null, '', window.location.pathname);
+        toast('Google Calendar connected.');
+      } catch (e) {
+        history.replaceState(null, '', window.location.pathname);
+        toast('Google OAuth failed: ' + e.message, true);
+      }
+    }
+  }
+
   go("remember");
   const cfg = loadConfig();
   if (cfg.token && cfg.owner) {
-    initMeetingDrawer(cfg, new GitHubClient(cfg));
+    initMeetingDrawer(cfg, new GitHubClient({ ...cfg, token: cfg.githubOAuthToken || cfg.token }));
   }
+  initConnectionsCog(cfg, (updated) => { saveConfig(updated); });
 }
 bootstrap();

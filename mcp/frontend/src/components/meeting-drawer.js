@@ -3,6 +3,9 @@ import { deriveSlug, parseSeries, buildSeriesFile, formatOccurrence, appendOccur
 import { MEETING_TEMPLATES, applyMeetingTemplate } from '../pages/meetings.js';
 import { pickBackend } from '../services/llm/backend.js';
 import { GitHubClient } from '../services/github.js';
+import { listTodayMeetings } from '../services/google-calendar.js';
+import { refreshGoogleToken } from '../services/oauth.js';
+import { postToSlack } from '../services/slack.js';
 
 const TODAY = () => new Date().toISOString().slice(0, 10);
 
@@ -144,6 +147,55 @@ export function initMeetingDrawer(config, gh) {
       <div id="mdsave-status"></div>
     `;
 
+    // Google Calendar "Today's meetings" dropdown
+    if (config.googleAccessToken) {
+      const calDiv = document.createElement('div');
+      calDiv.style.cssText = 'margin-bottom:8px';
+      calDiv.innerHTML = `<p class="drawer-label" style="margin-bottom:4px">Today's meetings</p>
+        <select id="gcal-select" class="search-input" style="width:100%;padding-left:12px">
+          <option value="">Loading…</option>
+        </select>`;
+      const dropzone = document.getElementById('mdrop');
+      if (dropzone) body.insertBefore(calDiv, dropzone);
+
+      listTodayMeetings(
+        config.googleAccessToken,
+        async () => {
+          const newToken = await refreshGoogleToken(config.googleClientId, config.googleRefreshToken);
+          if (newToken) {
+            config.googleAccessToken = newToken;
+            const saved = JSON.parse(localStorage.getItem('team-memory:config') || '{}');
+            saved.googleAccessToken = newToken;
+            localStorage.setItem('team-memory:config', JSON.stringify(saved));
+          }
+          return newToken;
+        }
+      ).then(events => {
+        const sel = document.getElementById('gcal-select');
+        if (!sel) return;
+        if (!events.length) {
+          sel.innerHTML = '<option value="">No meetings today</option>';
+          return;
+        }
+        sel.innerHTML = '<option value="">Pick a meeting…</option>' +
+          events.map((e, i) => `<option value="${i}">${escHtml(e.title)}</option>`).join('');
+        sel.addEventListener('change', () => {
+          const idx = parseInt(sel.value, 10);
+          if (isNaN(idx)) return;
+          const ev = events[idx];
+          const titleInput = document.getElementById('mdtitle');
+          const dateInput = document.getElementById('mddate');
+          const attendeesInput = document.getElementById('mdattendees');
+          if (titleInput) titleInput.value = ev.title;
+          if (dateInput) dateInput.value = ev.start.slice(0, 10);
+          if (attendeesInput) attendeesInput.value = ev.attendees.join(', ');
+        });
+      }).catch(() => {
+        const sel = document.getElementById('gcal-select');
+        if (sel) sel.innerHTML = '<option value="">Could not load meetings</option>';
+      });
+    }
+
     document.getElementById('mdrop').addEventListener('click', () => document.getElementById('mdfile').click());
     document.getElementById('mdrop').addEventListener('dragover', e => e.preventDefault());
     document.getElementById('mdrop').addEventListener('drop', e => { e.preventDefault(); handleMsgFile(e.dataTransfer.files[0]); });
@@ -284,6 +336,25 @@ export function initMeetingDrawer(config, gh) {
       const r = await gh.putContent({ path: `meetings/${slug}.md`, content, message: `feat: meeting notes — ${title} ${occurrence.date}` });
       if (!r.ok) throw new Error(r.message ?? 'Save failed');
       statusEl.innerHTML = '<p style="color:var(--green);font-size:12px">Saved.</p>';
+      if (config.slackWebhookUrl) {
+        const slackBtn = document.createElement('button');
+        slackBtn.className = 'btn-outline';
+        slackBtn.style.cssText = 'margin-top:6px;font-size:12px;width:100%';
+        slackBtn.textContent = 'Post to Slack';
+        statusEl.appendChild(slackBtn);
+        const notesVal = document.getElementById('mdnotes')?.value ?? '';
+        const actionsVal = document.getElementById('mdactions')?.value ?? '';
+        slackBtn.addEventListener('click', async () => {
+          const text = `*Meeting saved: ${title} — ${occurrence.date}*\nNotes: ${notesVal}\nActions: ${actionsVal}`;
+          try {
+            await postToSlack(config.slackWebhookUrl, text);
+            slackBtn.textContent = 'Posted ✓';
+            setTimeout(() => slackBtn.remove(), 2000);
+          } catch (e) {
+            slackBtn.textContent = 'Post failed: ' + e.message;
+          }
+        });
+      }
       await loadSeries(slug);
       renderBody();
     } catch (e) {
@@ -348,6 +419,25 @@ export function initMeetingDrawer(config, gh) {
       const r = await gh.putContent({ path, content: header + content, message: `feat: requirements — ${state.slug} ${today}` });
       if (!r.ok) throw new Error(r.message ?? 'Save failed');
       statusEl.innerHTML = `<p style="color:var(--green);font-size:12px">Saved to <code>${escHtml(path)}</code></p>`;
+      if (config.slackWebhookUrl) {
+        const slackBtn = document.createElement('button');
+        slackBtn.className = 'btn-outline';
+        slackBtn.style.cssText = 'margin-top:6px;font-size:12px;width:100%';
+        slackBtn.textContent = 'Post to Slack';
+        statusEl.appendChild(slackBtn);
+        const snippet = content.slice(0, 500);
+        const date = TODAY();
+        slackBtn.addEventListener('click', async () => {
+          const text = `*Requirements generated: ${state.slug} — ${date}*\n${snippet}${content.length > 500 ? '…' : ''}`;
+          try {
+            await postToSlack(config.slackWebhookUrl, text);
+            slackBtn.textContent = 'Posted ✓';
+            setTimeout(() => slackBtn.remove(), 2000);
+          } catch (e) {
+            slackBtn.textContent = 'Post failed: ' + e.message;
+          }
+        });
+      }
     } catch (e) {
       statusEl.innerHTML = `<p style="color:var(--danger);font-size:12px">${escHtml(e.message)}</p>`;
     } finally {
