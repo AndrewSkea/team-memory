@@ -81,14 +81,20 @@ func TestOAuthSlackCallbackBadState(t *testing.T) {
 
 func TestOAuthStateNonceExpiry(t *testing.T) {
 	store := newNonceStore()
-	store.set("mystate")
-	if !store.consume("mystate") {
+	store.set("mystate", "test-client")
+	cid, ok := store.consume("mystate")
+	if !ok {
 		t.Error("valid state should be accepted")
 	}
-	if store.consume("mystate") {
+	if cid != "test-client" {
+		t.Errorf("clientID = %q, want test-client", cid)
+	}
+	_, ok2 := store.consume("mystate")
+	if ok2 {
 		t.Error("state should only be consumed once")
 	}
-	if store.consume("nonexistent") {
+	_, ok3 := store.consume("nonexistent")
+	if ok3 {
 		t.Error("nonexistent state should be rejected")
 	}
 }

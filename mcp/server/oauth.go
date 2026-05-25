@@ -13,31 +13,37 @@ import (
 )
 
 // nonceStore holds short-lived state nonces for OAuth CSRF protection.
+type nonceEntry struct {
+	exp      time.Time
+	clientID string
+}
+
 type nonceStore struct {
 	mu      sync.Mutex
-	entries map[string]time.Time
+	entries map[string]nonceEntry
 }
 
 func newNonceStore() *nonceStore {
-	return &nonceStore{entries: make(map[string]time.Time)}
+	return &nonceStore{entries: make(map[string]nonceEntry)}
 }
 
-func (n *nonceStore) set(state string) {
+func (n *nonceStore) set(state, clientID string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.entries[state] = time.Now().Add(5 * time.Minute)
+	n.entries[state] = nonceEntry{exp: time.Now().Add(5 * time.Minute), clientID: clientID}
 }
 
-func (n *nonceStore) consume(state string) bool {
+// consume returns the stored clientID and true if the state is valid and not expired.
+// Returns ("", false) if invalid, expired, or not found.
+func (n *nonceStore) consume(state string) (clientID string, ok bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	exp, ok := n.entries[state]
-	if !ok || time.Now().After(exp) {
-		delete(n.entries, state)
-		return false
-	}
+	e, exists := n.entries[state]
 	delete(n.entries, state)
-	return true
+	if !exists || time.Now().After(e.exp) {
+		return "", false
+	}
+	return e.clientID, true
 }
 
 func randomState() (string, error) {
@@ -51,10 +57,14 @@ func randomState() (string, error) {
 // appOrigin derives the app URL from the request host (same server serves the frontend).
 func appOrigin(r *http.Request) string {
 	scheme := "http"
-	if r.TLS != nil {
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
-	return fmt.Sprintf("%s://%s", scheme, r.Host)
+	host := r.Host
+	if fwdHost := r.Header.Get("X-Forwarded-Host"); fwdHost != "" {
+		host = fwdHost
+	}
+	return fmt.Sprintf("%s://%s", scheme, host)
 }
 
 func (s *Server) handleGitHubOAuthStart(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +78,7 @@ func (s *Server) handleGitHubOAuthStart(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusInternalServerError, "could not generate state")
 		return
 	}
-	s.oauthNonces.set(state)
+	s.oauthNonces.set(state, clientID)
 	redirectURI := fmt.Sprintf("%s/oauth/github/callback", appOrigin(r))
 	params := url.Values{
 		"client_id":    {clientID},
@@ -83,11 +93,11 @@ func (s *Server) handleGitHubOAuthCallback(w http.ResponseWriter, r *http.Reques
 	origin := appOrigin(r)
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
-	if !s.oauthNonces.consume(state) {
+	clientID, ok := s.oauthNonces.consume(state)
+	if !ok {
 		http.Redirect(w, r, origin+"/#gh_error=invalid_state", http.StatusFound)
 		return
 	}
-	clientID := r.URL.Query().Get("client_id")
 	clientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
 	redirectURI := fmt.Sprintf("%s/oauth/github/callback", origin)
 
@@ -95,8 +105,12 @@ func (s *Server) handleGitHubOAuthCallback(w http.ResponseWriter, r *http.Reques
 		AccessToken string `json:"access_token"`
 		Error       string `json:"error"`
 	}
-	req, _ := http.NewRequestWithContext(r.Context(), http.MethodPost,
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost,
 		"https://github.com/login/oauth/access_token", nil)
+	if err != nil {
+		http.Redirect(w, r, origin+"/#gh_error=internal_error", http.StatusFound)
+		return
+	}
 	req.Header.Set("Accept", "application/json")
 	q := url.Values{
 		"client_id":     {clientID},
@@ -134,7 +148,7 @@ func (s *Server) handleSlackOAuthStart(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not generate state")
 		return
 	}
-	s.oauthNonces.set(state)
+	s.oauthNonces.set(state, clientID)
 	redirectURI := fmt.Sprintf("%s/oauth/slack/callback", appOrigin(r))
 	params := url.Values{
 		"client_id":    {clientID},
@@ -149,11 +163,11 @@ func (s *Server) handleSlackOAuthCallback(w http.ResponseWriter, r *http.Request
 	origin := appOrigin(r)
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
-	if !s.oauthNonces.consume(state) {
+	clientID, ok := s.oauthNonces.consume(state)
+	if !ok {
 		http.Redirect(w, r, origin+"/#slack_error=invalid_state", http.StatusFound)
 		return
 	}
-	clientID := r.URL.Query().Get("client_id")
 	clientSecret := os.Getenv("SLACK_CLIENT_SECRET")
 	redirectURI := fmt.Sprintf("%s/oauth/slack/callback", origin)
 
