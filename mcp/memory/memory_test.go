@@ -102,3 +102,56 @@ func TestMarshalUnmarshalRoundTripBodyEdgeCases(t *testing.T) {
 		})
 	}
 }
+
+func TestUnmarshalNormalisesUnknownScopeToTeam(t *testing.T) {
+	cases := map[string]Scope{
+		"":           ScopeTeam,
+		"team":       ScopeTeam,
+		"Team":       ScopeTeam,
+		"shared":     ScopeTeam,
+		"nonsense":   ScopeTeam,
+		"personal":   ScopePersonal,
+		"Personal":   ScopePersonal,
+		"PERSONAL":   ScopePersonal,
+		" personal ": ScopePersonal,
+	}
+	for raw, want := range cases {
+		data := []byte("---\nid: aaaa1111bbbb2222\ncreated: 2026-01-02T03:04:05Z\nauthor: andrew\nscope: \"" + raw + "\"\n---\n\nBody.\n")
+		m, err := Unmarshal(data)
+		if err != nil {
+			t.Fatalf("Unmarshal with scope %q: %v", raw, err)
+		}
+		if m.Scope != want {
+			t.Errorf("scope %q unmarshalled to %q, want %q", raw, m.Scope, want)
+		}
+	}
+}
+
+// TestUnmarshalledScopeAlwaysReachesAPath is the point of the normalisation:
+// RepoPath hard-errors on an unknown scope, and readDirMemories drops a file
+// whose Unmarshal fails, so an unrecognised scope word must be filed as team
+// rather than being able to make a queued memory either unfilable or
+// invisible. RepoPath keeps its error as defence in depth; nothing coming
+// out of Unmarshal should be able to reach it.
+func TestUnmarshalledScopeAlwaysReachesAPath(t *testing.T) {
+	for _, raw := range []string{"", "team", "shared", "nonsense", "Personal"} {
+		data := []byte("---\nid: aaaa1111bbbb2222\ncreated: 2026-01-02T03:04:05Z\nauthor: andrew\nscope: \"" + raw + "\"\nslug: a-thing\n---\n\nBody.\n")
+		m, err := Unmarshal(data)
+		if err != nil {
+			t.Fatalf("Unmarshal with scope %q: %v", raw, err)
+		}
+		if _, err := RepoPath(m); err != nil {
+			t.Errorf("RepoPath refused a memory unmarshalled with scope %q: %v", raw, err)
+		}
+	}
+}
+
+// TestRepoPathStillRefusesAnUnknownScope keeps the defence-in-depth error
+// alive: a Memory built in code rather than parsed from disk can still carry
+// a scope nothing knows how to file, and that must not be guessed at.
+func TestRepoPathStillRefusesAnUnknownScope(t *testing.T) {
+	m := Memory{ID: "aaaa1111bbbb2222", Scope: Scope("nonsense"), Slug: "a-thing"}
+	if _, err := RepoPath(m); err == nil {
+		t.Fatal("expected RepoPath to refuse an unknown scope")
+	}
+}

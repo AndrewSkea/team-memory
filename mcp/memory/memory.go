@@ -22,6 +22,23 @@ const (
 	ScopePersonal Scope = "personal"
 )
 
+// NormalizeScope maps a scope word read off disk onto one of the two scopes
+// that actually exist. A case-insensitive "personal" is personal; EVERYTHING
+// else - empty, v1's "shared", a typo, garbage - is team, per the rule that
+// an ambiguous memory is a team memory.
+//
+// It deliberately does not report an error. Unmarshal is what parses queued
+// files, and staging's readDirMemories drops any file Unmarshal rejects, so
+// making an unrecognised scope fatal would silently delete a memory from the
+// review queue over one typo. Filing it as team is the honest failure: the
+// memory is still there, still reviewable, and a reviewer can correct it.
+func NormalizeScope(v string) Scope {
+	if strings.EqualFold(strings.TrimSpace(v), string(ScopePersonal)) {
+		return ScopePersonal
+	}
+	return ScopeTeam
+}
+
 var delimiter = []byte("---\n")
 
 // ErrNoFrontmatter is returned when a file does not open with a YAML
@@ -81,9 +98,12 @@ func Marshal(m Memory) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Unmarshal parses frontmatter plus body back into a Memory. A memory with no
-// explicit scope defaults to team, matching the spec's rule that ambiguous
-// memories are team memories.
+// Unmarshal parses frontmatter plus body back into a Memory. The scope is
+// normalised through NormalizeScope, so an absent, mis-cased or unrecognised
+// scope word becomes team rather than being passed through verbatim for
+// RepoPath to hard-error on later. Before this, migrate defaulted such a word
+// to team while memory treated it as fatal: the same byte on disk was safe in
+// one package and unfilable in the other.
 func Unmarshal(data []byte) (Memory, error) {
 	if !bytes.HasPrefix(data, delimiter) {
 		return Memory{}, ErrNoFrontmatter
@@ -98,9 +118,7 @@ func Unmarshal(data []byte) (Memory, error) {
 	if err := yaml.Unmarshal(rest[:end], &fm); err != nil {
 		return Memory{}, fmt.Errorf("memory: parse frontmatter: %w", err)
 	}
-	if fm.Scope == "" {
-		fm.Scope = ScopeTeam
-	}
+	fm.Scope = NormalizeScope(string(fm.Scope))
 
 	body := string(bytes.TrimPrefix(rest[end+len(delimiter):], []byte("\n")))
 	body = strings.TrimSuffix(body, "\n")

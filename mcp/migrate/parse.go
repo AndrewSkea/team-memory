@@ -225,11 +225,12 @@ func cutField(line string) (key, val string, ok bool) {
 // unrecognised — including empty, "shared", or garbage — defaults to team,
 // per the spec's rule that ambiguous memories are team memories. Only an
 // exact (case-insensitive) "personal" is ever treated as personal.
+//
+// It delegates to memory.NormalizeScope so there is one rule rather than
+// two: memory.Unmarshal reads these same words back off disk, and while the
+// two disagreed the same byte was "safely defaulted" here and fatal there.
 func mapScope(v1 string) memory.Scope {
-	if strings.EqualFold(strings.TrimSpace(v1), "personal") {
-		return memory.ScopePersonal
-	}
-	return memory.ScopeTeam
+	return memory.NormalizeScope(v1)
 }
 
 func splitTags(s string) []string {
