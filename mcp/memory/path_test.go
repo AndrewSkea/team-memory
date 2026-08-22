@@ -107,3 +107,41 @@ func TestRepoPathRejectsTraversalInAuthor(t *testing.T) {
 		t.Fatal("expected error for author containing path traversal")
 	}
 }
+
+func TestValidIDRejectsHostileIDs(t *testing.T) {
+	bad := map[string]string{
+		"empty":         "",
+		"traversal":     "../../evil",
+		"slash":         "a/b",
+		"backslash":     `a\b`,
+		"drive letter":  "c:evil",
+		"NUL":           "aa\x00bb",
+		"dot":           ".",
+		"dotdot":        "..",
+		"leading dot":   ".hidden",
+		"trailing dot":  "trailing.",
+		"leading space": " lead",
+		"trailing sp":   "trail ",
+	}
+	for name, id := range bad {
+		if err := ValidID(id); err == nil {
+			t.Errorf("ValidID(%q) [%s] = nil, want an error", id, name)
+		}
+	}
+	if err := ValidID("aaaa1111bbbb2222"); err != nil {
+		t.Errorf("ValidID on a normal id: %v", err)
+	}
+}
+
+func TestRepoPathRejectsTraversingID(t *testing.T) {
+	m := Memory{
+		ID:      "../../../../evil",
+		Scope:   ScopeTeam,
+		Slug:    "pwn",
+		Created: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+	}
+	p, err := RepoPath(m)
+	if err == nil {
+		t.Fatalf("RepoPath accepted a traversing id and returned %q", p)
+	}
+}

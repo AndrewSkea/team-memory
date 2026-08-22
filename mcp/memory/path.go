@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -50,12 +51,52 @@ func Slugify(s string) string {
 	return out
 }
 
+// ValidID rejects anything that is not a plain filename segment. Ids are
+// attacker-influenced: they arrive from filenames on disk, from YAML
+// frontmatter inside files a human can edit by hand, and eventually from
+// HTTP request paths, and every one of those routes ends up interpolated
+// into a filename by RepoPath or by the staging package. Anything containing
+// a path separator, a ".." component, a NUL byte, a Windows drive letter, or
+// a leading/trailing dot or space must fail loudly rather than resolve
+// somewhere nobody asked for.
+//
+// This is the ONE id validator in the codebase; staging delegates to it.
+func ValidID(id string) error {
+	if id == "" {
+		return fmt.Errorf("memory: empty id")
+	}
+	if strings.ContainsRune(id, 0) {
+		return fmt.Errorf("memory: id %q contains a NUL byte", id)
+	}
+	if strings.ContainsAny(id, `/\:`) {
+		return fmt.Errorf("memory: id %q contains a path separator or drive letter", id)
+	}
+	if id == "." || id == ".." || strings.Contains(id, "..") {
+		return fmt.Errorf("memory: id %q contains a parent-directory component", id)
+	}
+	// A leading dot hides the file; a leading or trailing space is silently
+	// stripped by Windows when the path is resolved, so two distinct ids
+	// would name one file. A trailing dot is stripped the same way.
+	if strings.HasPrefix(id, ".") || strings.HasSuffix(id, ".") ||
+		strings.HasPrefix(id, " ") || strings.HasSuffix(id, " ") {
+		return fmt.Errorf("memory: id %q has a leading or trailing dot or space", id)
+	}
+	if id != filepath.Base(id) {
+		return fmt.Errorf("memory: id %q is not a plain filename segment", id)
+	}
+	return nil
+}
+
 // RepoPath returns the repo-relative, forward-slash path for a memory.
 // Content addressing means two writers on different machines never target the
 // same path for different content, so concurrent additions merge cleanly.
 func RepoPath(m Memory) (string, error) {
-	if m.ID == "" {
-		return "", fmt.Errorf("memory: cannot build path, ID is empty")
+	// The ID is interpolated straight into the filename below, so it is
+	// validated here rather than trusted, exactly as Author is. Every caller
+	// that reads an ID out of file content is one that can be handed a
+	// traversing one.
+	if err := ValidID(m.ID); err != nil {
+		return "", fmt.Errorf("memory: cannot build path: %w", err)
 	}
 	slug := Slugify(m.Slug)
 	dateDir := m.Created.UTC().Format("2006/01")

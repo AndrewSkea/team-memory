@@ -45,26 +45,14 @@ func New(l paths.Layout) (*Area, error) {
 	return &Area{layout: l}, nil
 }
 
-// validID rejects anything that is not a plain filename segment. Ids are
-// attacker-influenced: they arrive from filenames on disk and, eventually,
-// from HTTP request paths, so anything containing a path separator, a ".."
-// component, a NUL byte, or a Windows drive letter must fail loudly rather
-// than resolve outside Pending/Bin.
+// validID delegates to memory.ValidID so there is exactly ONE id validator
+// in the codebase. Ids validated here become paths under Pending/Bin; the
+// same ids validated in memory.RepoPath become paths inside the clone. Two
+// validators would mean two chances to drift apart, and the weaker of the
+// two would define the real guarantee.
 func validID(id string) error {
-	if id == "" {
-		return fmt.Errorf("staging: empty id")
-	}
-	if strings.ContainsRune(id, 0) {
-		return fmt.Errorf("staging: id %q contains a NUL byte", id)
-	}
-	if strings.ContainsAny(id, `/\:`) {
-		return fmt.Errorf("staging: id %q contains a path separator or drive letter", id)
-	}
-	if id == "." || id == ".." || strings.Contains(id, "..") {
-		return fmt.Errorf("staging: id %q contains a parent-directory component", id)
-	}
-	if id != filepath.Base(id) {
-		return fmt.Errorf("staging: id %q is not a plain filename segment", id)
+	if err := memory.ValidID(id); err != nil {
+		return fmt.Errorf("staging: %w", err)
 	}
 	return nil
 }
@@ -190,6 +178,12 @@ func (a *Area) Take(id string) (memory.Memory, error) {
 	if err != nil {
 		return memory.Memory{}, fmt.Errorf("staging: parse pending %s: %w", id, err)
 	}
+	// The frontmatter id is file content and therefore untrusted: a pending
+	// file whose frontmatter claims "../../../../evil" would otherwise reach
+	// memory.RepoPath and commit outside memories/. readDirMemories does the
+	// same overwrite for the same reason; Take is the reader whose output
+	// reaches the clone, so it must not be the one that skips it.
+	m.ID = id
 	if err := os.Remove(p); err != nil {
 		return memory.Memory{}, fmt.Errorf("staging: remove pending %s: %w", id, err)
 	}
