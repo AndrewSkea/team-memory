@@ -71,29 +71,28 @@ func (s *Store) Remove(repoPath, msg string) (plumbing.Hash, error) {
 	return s.commitPath(abs, msg)
 }
 
-// assertInsideClone is the guard. Every path that reaches git passes through
-// here first, and there is exactly one implementation of the check so that
-// there is exactly one place to audit.
+// assertInsideClone is the guard: the single funnel every write path in this
+// package passes through, and the single place to audit. Task 9's PutRaw must
+// call this and nothing else.
 //
-// It applies three tests, all of which fail closed — any error resolving a
-// path is a refusal, never an admission:
+// The link-component check that closes the Windows-junction hole now lives in
+// paths.IsInsideClone, so the primitive is safe for every consumer rather than
+// only for this one. This method adds the two rules that are the store's own
+// business:
 //
-//  1. paths.IsInsideClone, which resolves symlinks over the longest existing
-//     prefix, so a POSIX symlink pointing out to staging is refused.
-//  2. A walk of every path component from the clone root down, refusing any
-//     component that is not a plain directory or regular file. This closes a
-//     hole that test 1 alone does not: on Windows, filepath.EvalSymlinks does
-//     not follow a directory junction (verified on go1.26 — it returns the
-//     junction path unchanged with a nil error), so a junction planted inside
-//     the clone and pointing at staging would otherwise be judged "inside".
-//     Because the walk starts at the clone root and follows exactly the
-//     relative path handed to worktree.Add, it checks the route git will
-//     actually take.
-//  3. A refusal of anything under the clone's own .git directory.
+//   - The target must be STRICTLY inside the clone. The clone root itself
+//     resolves "inside", but staging it would mean worktree.Add(".") — every
+//     file in the worktree in one commit. Every commit this store makes is one
+//     memory file, and a guard whose blast radius is the whole worktree is one
+//     refactor away from committing something nobody reviewed.
+//   - Nothing under .git, which is inside the clone but never ours to stage.
+//
+// Every branch fails closed: any error resolving a path is a refusal, never an
+// admission.
 func (s *Store) assertInsideClone(abs string) error {
 	inside, err := s.layout.IsInsideClone(abs)
 	if err != nil {
-		return fmt.Errorf("store: check path %q: %w", abs, err)
+		return fmt.Errorf("%w: %s: %w", ErrOutsideClone, abs, err)
 	}
 	if !inside {
 		return fmt.Errorf("%w: %s", ErrOutsideClone, abs)
@@ -103,28 +102,13 @@ func (s *Store) assertInsideClone(abs string) error {
 	if err != nil {
 		return fmt.Errorf("store: relativise %q: %w", abs, err)
 	}
-	cur := s.layout.Clone
-	for _, seg := range strings.Split(filepath.ToSlash(rel), "/") {
-		if seg == "" || seg == "." {
-			continue
-		}
+	slashed := filepath.ToSlash(rel)
+	if slashed == "." || slashed == "" {
+		return fmt.Errorf("%w: %s is the clone root, not a file within it", ErrOutsideClone, abs)
+	}
+	for _, seg := range strings.Split(slashed, "/") {
 		if seg == ".git" {
 			return fmt.Errorf("%w: %s", ErrGitInternal, abs)
-		}
-		cur = filepath.Join(cur, seg)
-		fi, err := os.Lstat(cur)
-		if errors.Is(err, os.ErrNotExist) {
-			// Nothing exists here yet, so this component cannot be a link
-			// and neither can anything below it.
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("store: inspect path component %q: %w", cur, err)
-		}
-		// A junction reports as ModeIrregular; a symlink as ModeSymlink.
-		// Nothing this store legitimately writes is either.
-		if fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
-			return fmt.Errorf("%w: %s is a link, not a real directory entry", ErrOutsideClone, cur)
 		}
 	}
 	return nil

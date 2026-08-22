@@ -1,8 +1,12 @@
 package paths
 
 import (
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -98,5 +102,103 @@ func TestResolveHonoursEnv(t *testing.T) {
 	}
 	if l.Home != dir {
 		t.Errorf("Home = %q, want %q", l.Home, dir)
+	}
+}
+
+// linkDir creates a directory link at link pointing at target. On Windows an
+// unprivileged process cannot create a symlink, so fall back to a directory
+// junction, which is the more dangerous case anyway: filepath.EvalSymlinks
+// does not follow a junction.
+func linkDir(target, link string) error {
+	err := os.Symlink(target, link)
+	if err == nil || runtime.GOOS != "windows" {
+		return err
+	}
+	out, mkErr := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput()
+	if mkErr != nil {
+		return fmt.Errorf("os.Symlink: %v; mklink /J: %v: %s", err, mkErr, out)
+	}
+	return nil
+}
+
+// PERMANENT REGRESSION TEST. Do not delete, skip, or weaken.
+//
+// A link planted inside the clone that points out to staging must not be able
+// to launder unreviewed content into a shareable commit. This test does not
+// skip when it cannot create the hostile condition: a security test that
+// reports green without having run is worse than no test at all.
+func TestIsInsideCloneRefusesLinkedComponent(t *testing.T) {
+	l, _ := New(t.TempDir())
+	if err := l.EnsureDirs(); err != nil {
+		t.Fatalf("EnsureDirs: %v", err)
+	}
+
+	link := filepath.Join(l.Clone, "shortcut")
+	if err := linkDir(l.Pending, link); err != nil {
+		t.Fatalf("cannot create a directory link, so the clone-boundary guarantee "+
+			"is UNVERIFIED on this machine: %v", err)
+	}
+	leak := filepath.Join(l.Pending, "unreviewed.md")
+	if err := os.WriteFile(leak, []byte("secret"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	via := filepath.Join(link, "unreviewed.md")
+	ok, err := l.IsInsideClone(via)
+	if ok {
+		t.Errorf("%q reaches staging through a link and must NOT be inside the clone", via)
+	}
+	if !errors.Is(err, ErrLinkedComponent) {
+		t.Errorf("err = %v, want ErrLinkedComponent", err)
+	}
+}
+
+// The link itself, not just a path below it, is refused.
+func TestIsInsideCloneRefusesTheLinkItself(t *testing.T) {
+	l, _ := New(t.TempDir())
+	if err := l.EnsureDirs(); err != nil {
+		t.Fatalf("EnsureDirs: %v", err)
+	}
+	link := filepath.Join(l.Clone, "shortcut")
+	if err := linkDir(l.Pending, link); err != nil {
+		t.Fatalf("cannot create a directory link, so the clone-boundary guarantee "+
+			"is UNVERIFIED on this machine: %v", err)
+	}
+	ok, err := l.IsInsideClone(link)
+	if ok || !errors.Is(err, ErrLinkedComponent) {
+		t.Errorf("IsInsideClone(link) = %v, %v; want false, ErrLinkedComponent", ok, err)
+	}
+}
+
+// An ordinary not-yet-existing path below a real directory stays inside, so
+// the link check does not break the normal write path.
+func TestIsInsideCloneAllowsUncreatedDescendant(t *testing.T) {
+	l, _ := New(t.TempDir())
+	if err := l.EnsureDirs(); err != nil {
+		t.Fatalf("EnsureDirs: %v", err)
+	}
+	p := filepath.Join(l.Clone, "memories", "team", "2026", "08", "x.md")
+	ok, err := l.IsInsideClone(p)
+	if err != nil {
+		t.Fatalf("IsInsideClone: %v", err)
+	}
+	if !ok {
+		t.Errorf("%q should be inside the clone", p)
+	}
+}
+
+// The clone root itself still reports inside. Refusing it is the store's rule,
+// not this primitive's.
+func TestIsInsideCloneAcceptsCloneRoot(t *testing.T) {
+	l, _ := New(t.TempDir())
+	if err := l.EnsureDirs(); err != nil {
+		t.Fatalf("EnsureDirs: %v", err)
+	}
+	ok, err := l.IsInsideClone(l.Clone)
+	if err != nil {
+		t.Fatalf("IsInsideClone: %v", err)
+	}
+	if !ok {
+		t.Error("the clone root should report as inside the clone")
 	}
 }

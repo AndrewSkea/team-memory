@@ -7,6 +7,7 @@
 package paths
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,9 +86,31 @@ func (l Layout) EnsureDirs() error {
 	return nil
 }
 
+// ErrLinkedComponent means abs reaches the clone by something other than a
+// plain descent from the clone root: one of its components is a symlink, a
+// junction, or another reparse point, or the path only lands inside the clone
+// after such a link is followed.
+//
+// A linked component is refused rather than resolved, because the whole point
+// of the clone boundary is that a link planted inside the worktree must not be
+// able to launder content from staging/ into a shareable commit.
+var ErrLinkedComponent = errors.New("paths: path reaches the clone through a link, not a plain descent")
+
 // IsInsideClone reports whether abs resolves to a location within the clone
 // worktree. Symlinks are resolved where the path exists, so a symlink pointing
 // out of the worktree cannot masquerade as inside it.
+//
+// It also refuses any path whose route from the clone root passes through a
+// link. That second check is not redundant: filepath.EvalSymlinks does NOT
+// follow a Windows directory junction — it returns the junction path unchanged
+// with a nil error — so resolution alone judged a junction planted inside the
+// clone and pointing at staging/ to be "inside". Walking the components is
+// OS-independent and needs no platform API, so it closes that class of hole on
+// every platform rather than special-casing the one where it was found.
+//
+// The refusal fails closed in both return values: (false, ErrLinkedComponent).
+// A caller that checks only the bool still refuses the write, and a caller that
+// checks only the error still learns why.
 func (l Layout) IsInsideClone(abs string) (bool, error) {
 	clone, err := resolveExisting(l.Clone)
 	if err != nil {
@@ -97,10 +120,50 @@ func (l Layout) IsInsideClone(abs string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if target == clone {
-		return true, nil
+	if target != clone && !strings.HasPrefix(target, clone+string(os.PathSeparator)) {
+		return false, nil
 	}
-	return strings.HasPrefix(target, clone+string(os.PathSeparator)), nil
+	if err := l.assertPlainDescent(abs); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// assertPlainDescent walks abs one component at a time from the clone root,
+// following exactly the route a consumer will hand to git, and refuses any
+// component that is not an ordinary directory entry.
+func (l Layout) assertPlainDescent(abs string) error {
+	rel, err := filepath.Rel(l.Clone, abs)
+	if err != nil {
+		return fmt.Errorf("paths: relativise %q against clone: %w", abs, err)
+	}
+	cur := l.Clone
+	for _, seg := range strings.Split(filepath.ToSlash(rel), "/") {
+		switch seg {
+		case "", ".":
+			continue
+		case "..":
+			// abs only landed inside the clone because a link was followed
+			// on the way. Refuse rather than resolve.
+			return fmt.Errorf("%w: %s", ErrLinkedComponent, abs)
+		}
+		cur = filepath.Join(cur, seg)
+		fi, err := os.Lstat(cur)
+		if errors.Is(err, os.ErrNotExist) {
+			// Nothing exists here yet, so this component cannot be a link
+			// and neither can anything below it.
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("paths: inspect path component %q: %w", cur, err)
+		}
+		// A POSIX symlink reports as ModeSymlink; a Windows junction reports
+		// as ModeIrregular. Neither is a plain descent.
+		if fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return fmt.Errorf("%w: %s", ErrLinkedComponent, cur)
+		}
+	}
+	return nil
 }
 
 // resolveExisting cleans a path and resolves symlinks on the longest existing

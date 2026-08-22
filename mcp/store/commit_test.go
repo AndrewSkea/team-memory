@@ -167,20 +167,25 @@ func assertNothingStaged(t *testing.T, s *Store) {
 // fallback the symlink attack would be silently skipped on the platform where
 // this code is developed.
 func linkDir(target, link string) error {
-	if err := os.Symlink(target, link); err == nil {
-		return err
-	} else if runtime.GOOS != "windows" {
+	err := os.Symlink(target, link)
+	if err == nil || runtime.GOOS != "windows" {
 		return err
 	}
-	out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("mklink /J: %v: %s", err, out)
+	out, mkErr := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput()
+	if mkErr != nil {
+		return fmt.Errorf("os.Symlink: %v; mklink /J: %v: %s", err, mkErr, out)
 	}
 	return nil
 }
 
-// A symlink planted inside the clone that points out to staging must not
-// launder staging content into the repository.
+// PERMANENT REGRESSION TEST. Do not delete, skip, or weaken.
+//
+// A link planted inside the clone that points out to staging must not launder
+// staging content into the repository. paths owns the primitive regression
+// test for this; the funnel gets its own because the funnel is what production
+// calls. This test fails rather than skips when the hostile condition cannot be
+// built: a security test that reports green without having run is worse than
+// no test at all.
 func TestCommitPathRefusesSymlinkOrJunctionOutOfClone(t *testing.T) {
 	l := newLayout(t)
 	s, err := Open(l)
@@ -190,7 +195,8 @@ func TestCommitPathRefusesSymlinkOrJunctionOutOfClone(t *testing.T) {
 
 	link := filepath.Join(l.Clone, "shortcut")
 	if err := linkDir(l.Pending, link); err != nil {
-		t.Skipf("cannot create a directory link on this host: %v", err)
+		t.Fatalf("cannot create a directory link, so the privacy guarantee is "+
+			"UNVERIFIED on this machine: %v", err)
 	}
 	leak := filepath.Join(l.Pending, "unreviewed.md")
 	if err := os.WriteFile(leak, []byte("secret"), 0o600); err != nil {
@@ -350,4 +356,38 @@ func TestPutIsRepeatable(t *testing.T) {
 		t.Errorf("two puts produced the same commit %s", h1)
 	}
 	assertNothingStaged(t, s)
+}
+
+// The clone root itself is refused. It resolves "inside" the clone, but
+// staging it means worktree.Add("."): every file in the worktree in a single
+// commit. Every commit this store makes is exactly one memory file.
+func TestCommitPathRefusesCloneRoot(t *testing.T) {
+	l := newLayout(t)
+	s, err := Open(l)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if _, err := s.Put(newMemory("a real memory"), "add"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	for _, p := range []string{l.Clone, l.Clone + string(filepath.Separator), filepath.Join(l.Clone, ".")} {
+		if _, err := s.commitPath(p, "should never happen"); !errors.Is(err, ErrOutsideClone) {
+			t.Errorf("commitPath(%q) = %v, want ErrOutsideClone", p, err)
+		}
+	}
+}
+
+// Remove refuses the clone root too, and does not delete anything trying.
+func TestRemoveRefusesCloneRoot(t *testing.T) {
+	l := newLayout(t)
+	s, err := Open(l)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if _, err := s.Remove(".", "should never happen"); !errors.Is(err, ErrOutsideClone) {
+		t.Fatalf("Remove(\".\") = %v, want ErrOutsideClone", err)
+	}
+	if _, err := os.Stat(l.Clone); err != nil {
+		t.Errorf("clone must still exist: %v", err)
+	}
 }
