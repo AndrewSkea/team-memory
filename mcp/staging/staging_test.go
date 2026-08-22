@@ -1,8 +1,12 @@
 package staging
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -245,5 +249,305 @@ func TestPendingSkipsUnparsableFile(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != "3333333333333333" {
 		t.Fatalf("Pending = %+v, want only the good memory", got)
+	}
+}
+
+// TestBinnedNeverReadsOutsideBin is the review-mandated proof that Binned
+// keys its sidecar lookup off the filename readDirMemories saw, never off
+// frontmatter content. It plants a bin file whose frontmatter id points
+// outside Bin (at a "secret" sidecar sitting in the clone) and asserts
+// Binned neither reads nor reports anything from that outside location.
+//
+// This is the test that actually carries the escape-proof weight for
+// Binned; TestRejectRejectsIDWithSeparators (kept because the brief
+// mandates it verbatim) is vacuous on its own — it still passes even with
+// validID's separator/".." checks mutated out, because the rename then
+// simply fails with ENOENT for an unrelated reason. This test, and
+// TestRejectIDCannotEscapeStaging above, are the ones that actually
+// exercise the guard.
+func TestBinnedNeverReadsOutsideBin(t *testing.T) {
+	a, l := newArea(t)
+
+	// A "secret" sidecar sitting in the clone, wholly outside Bin, that must
+	// never be surfaced through Binned as if it were a legitimate reason.
+	secretJSON := filepath.Join(l.Clone, "secret.json")
+	if err := os.WriteFile(secretJSON, []byte(`{"reason":"LEAKED SECRET","rejected_at":"2026-01-01T00:00:00Z"}`), 0o600); err != nil {
+		t.Fatalf("write secret sidecar: %v", err)
+	}
+
+	// A bin entry whose frontmatter id attempts to walk out to that secret.
+	planted := "---\nid: ../../clone/secret\ncreated: 2026-08-22T00:00:00Z\n---\n\nPlanted.\n"
+	if err := os.WriteFile(filepath.Join(l.Bin, "innocent.md"), []byte(planted), 0o600); err != nil {
+		t.Fatalf("plant bin file: %v", err)
+	}
+
+	binned, err := a.Binned()
+	if err != nil {
+		t.Fatalf("Binned: %v", err)
+	}
+	if len(binned) != 1 {
+		t.Fatalf("expected 1 bin item, got %d", len(binned))
+	}
+	if binned[0].Reason == "LEAKED SECRET" {
+		t.Fatal("Binned read the sidecar via a frontmatter-controlled id instead of the filename")
+	}
+	if binned[0].Reason != "" {
+		t.Errorf("Reason = %q, want empty (no sidecar exists at the filename-derived key)", binned[0].Reason)
+	}
+	if binned[0].Memory.ID != "innocent" {
+		t.Errorf("Memory.ID = %q, want filename-derived %q", binned[0].Memory.ID, "innocent")
+	}
+
+	// The id Binned reports must actually be usable by Restore — proving the
+	// correctness half of the bug: a filename/frontmatter-id mismatch used
+	// to produce a listed item that could not be restored.
+	if err := a.Restore(binned[0].Memory.ID); err != nil {
+		t.Fatalf("Restore using the ID Binned reported should work: %v", err)
+	}
+}
+
+// TestBinnedOrderedByRejectedAtThenID is an end-to-end sanity check that a
+// real Binned() call, through Reject, produces the wanted order for a small
+// set of distinct rejection times. It does not by itself prove the ID
+// tiebreak matters (see TestSortBinnedOrdersByRejectedAtThenID below for
+// that) because os.ReadDir already hands readDirMemories entries in
+// filename order, which is identical to ID order here.
+func TestBinnedOrderedByRejectedAtThenID(t *testing.T) {
+	a, l := newArea(t)
+	same := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	ids := []string{"bbbbbbbbbbbbbbbb", "aaaaaaaaaaaaaaaa", "cccccccccccccccc"}
+
+	for _, id := range ids {
+		data, err := memory.Marshal(mem(id, "x"))
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(l.Bin, id+".md"), data, 0o600); err != nil {
+			t.Fatalf("write bin md %s: %v", id, err)
+		}
+		meta, err := json.Marshal(struct {
+			Reason     string    `json:"reason"`
+			RejectedAt time.Time `json:"rejected_at"`
+		}{"r", same})
+		if err != nil {
+			t.Fatalf("marshal meta: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(l.Bin, id+".json"), meta, 0o600); err != nil {
+			t.Fatalf("write bin json %s: %v", id, err)
+		}
+	}
+
+	binned, err := a.Binned()
+	if err != nil {
+		t.Fatalf("Binned: %v", err)
+	}
+	if len(binned) != 3 {
+		t.Fatalf("expected 3 bin items, got %d", len(binned))
+	}
+	wantOrder := []string{"aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc"}
+	for i, want := range wantOrder {
+		if binned[i].Memory.ID != want {
+			t.Errorf("position %d: ID = %q, want %q", i, binned[i].Memory.ID, want)
+		}
+	}
+}
+
+// TestSortBinnedOrdersByRejectedAtThenID is the test that actually carries
+// the ID-tiebreak proof. It calls sortBinned directly on a slice that is
+// deliberately NOT already in ID order (c, a, b — not a, b, c), so a sort
+// with no tiebreak (which, for tied RejectedAt values, may leave input
+// order untouched rather than reordering it) is caught rather than
+// accidentally passing because the input happened to already be sorted.
+func TestSortBinnedOrdersByRejectedAtThenID(t *testing.T) {
+	same := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	items := []BinItem{
+		{Memory: memory.Memory{ID: "cccccccccccccccc"}, RejectedAt: same},
+		{Memory: memory.Memory{ID: "aaaaaaaaaaaaaaaa"}, RejectedAt: same},
+		{Memory: memory.Memory{ID: "bbbbbbbbbbbbbbbb"}, RejectedAt: same},
+	}
+
+	sortBinned(items)
+
+	wantOrder := []string{"aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc"}
+	for i, want := range wantOrder {
+		if items[i].Memory.ID != want {
+			t.Errorf("position %d: ID = %q, want %q", i, items[i].Memory.ID, want)
+		}
+	}
+}
+
+// TestAddIsAtomicNoTempFileLeftBehind checks that Add's atomic-write path
+// leaves exactly the final file behind, with no temp file remnant.
+func TestAddIsAtomicNoTempFileLeftBehind(t *testing.T) {
+	a, l := newArea(t)
+	if err := a.Add(mem("4444444444444444", "Atomic.")); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	entries, err := os.ReadDir(l.Pending)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "4444444444444444.md" {
+		t.Fatalf("Pending dir = %v, want exactly one file 4444444444444444.md", entries)
+	}
+}
+
+// TestAddNeverExposesAPartialFile is the concurrency proof behind
+// atomicity: readers hammering the final path throughout the entire Add
+// call must only ever see "not there yet" or "fully written, parseable" —
+// never a file that exists but is empty or truncated. A large body and
+// several rounds widen the window in which a non-atomic write (open,
+// truncate, then write) would let a concurrent reader observe a
+// zero-length or partial file in between; several concurrent readers and
+// repeated rounds raise the odds of a reader's poll landing inside that
+// window when it exists.
+func TestAddNeverExposesAPartialFile(t *testing.T) {
+	const rounds = 10
+	const readers = 4
+	body := strings.Repeat("x", 16*1024*1024) // 16MiB widens the write window
+
+	for round := 0; round < rounds; round++ {
+		a, l := newArea(t)
+		id := "6666666666666666"
+		target := filepath.Join(l.Pending, id+".md")
+
+		stop := make(chan struct{})
+		var wg sync.WaitGroup
+		var sawPartial int32
+		for r := 0; r < readers; r++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+					}
+					data, err := os.ReadFile(target)
+					if err != nil {
+						continue // not there yet — fine
+					}
+					if _, perr := memory.Unmarshal(data); perr != nil {
+						atomic.StoreInt32(&sawPartial, 1)
+						return
+					}
+				}
+			}()
+		}
+
+		if err := a.Add(mem(id, body)); err != nil {
+			t.Fatalf("round %d: Add: %v", round, err)
+		}
+		close(stop)
+		wg.Wait()
+
+		if atomic.LoadInt32(&sawPartial) == 1 {
+			t.Fatalf("round %d: a concurrent reader observed a partial/unparsable pending file mid-write", round)
+		}
+	}
+}
+
+// TestRejectUnknownIDLeavesNoOrphanSidecar proves that when the memory-file
+// move half of Reject fails, the sidecar written first is cleaned up rather
+// than left behind with nothing to attach to.
+func TestRejectUnknownIDLeavesNoOrphanSidecar(t *testing.T) {
+	a, l := newArea(t)
+	if err := a.Reject("9999999999999999", "no such pending memory"); err == nil {
+		t.Fatal("expected error rejecting an id with no pending memory")
+	}
+	if _, err := os.Stat(filepath.Join(l.Bin, "9999999999999999.json")); !os.IsNotExist(err) {
+		t.Errorf("sidecar must not remain after a failed reject; stat err = %v", err)
+	}
+}
+
+// TestTakeIsAtomicConcurrentCallersDontDoubleTake proves two concurrent
+// Take calls on the same id cannot both succeed — the atomic claim rename
+// means exactly one caller gets the memory and the other gets an error.
+func TestTakeIsAtomicConcurrentCallersDontDoubleTake(t *testing.T) {
+	a, _ := newArea(t)
+	if err := a.Add(mem("8888888888888888", "Racy.")); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	const n = 8
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			_, err := a.Take("8888888888888888")
+			errs[i] = err
+		}(i)
+	}
+	wg.Wait()
+
+	successes := 0
+	for _, err := range errs {
+		if err == nil {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("expected exactly 1 successful Take among %d concurrent callers, got %d", n, successes)
+	}
+}
+
+// TestRejectSidecarNeverLagsRename is the race proof behind fix 4: the
+// rejection sidecar must be written before the memory is moved into Bin, so
+// a reader racing the two steps never observes the memory already listed
+// in Bin with no sidecar behind it yet (which Binned() would report as a
+// spuriously-empty Reason, indistinguishable from a rejection given no
+// reason at all). Several pollers hit the bin path and sidecar path
+// directly (bypassing Binned()'s own readdir overhead, which would
+// otherwise mask the tiny window) throughout many rounds of Reject, and we
+// fail if the memory is ever seen present in Bin before its sidecar is.
+func TestRejectSidecarNeverLagsRename(t *testing.T) {
+	const rounds = 50
+	const pollers = 8
+	const reason = "definitely not empty"
+
+	for round := 0; round < rounds; round++ {
+		a, l := newArea(t)
+		id := "7777777777777777"
+		if err := a.Add(mem(id, "body")); err != nil {
+			t.Fatalf("round %d: Add: %v", round, err)
+		}
+		binFile := filepath.Join(l.Bin, id+".md")
+		sidecarFile := filepath.Join(l.Bin, id+".json")
+
+		stop := make(chan struct{})
+		var wg sync.WaitGroup
+		var sawUnbacked int32
+		for p := 0; p < pollers; p++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+					}
+					if _, err := os.Stat(binFile); err == nil {
+						if _, err := os.Stat(sidecarFile); err != nil {
+							atomic.StoreInt32(&sawUnbacked, 1)
+							return
+						}
+					}
+				}
+			}()
+		}
+
+		if err := a.Reject(id, reason); err != nil {
+			t.Fatalf("round %d: Reject: %v", round, err)
+		}
+		close(stop)
+		wg.Wait()
+
+		if atomic.LoadInt32(&sawUnbacked) == 1 {
+			t.Fatalf("round %d: memory was present in Bin before its rejection sidecar existed", round)
+		}
 	}
 }
