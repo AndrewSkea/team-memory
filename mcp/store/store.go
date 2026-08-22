@@ -84,7 +84,8 @@ func (s *Store) Sync(ctx context.Context) error {
 		return fmt.Errorf("store: head: %w", err)
 	}
 
-	remoteRef := plumbing.NewRemoteReferenceName(git.DefaultRemoteName, head.Name().Short())
+	branch := head.Name()
+	remoteRef := plumbing.NewRemoteReferenceName(git.DefaultRemoteName, branch.Short())
 	remote, err := s.repo.Reference(remoteRef, true)
 	if err != nil {
 		if errors.Is(err, plumbing.ErrReferenceNotFound) {
@@ -93,6 +94,17 @@ func (s *Store) Sync(ctx context.Context) error {
 		return fmt.Errorf("store: resolve %s: %w", remoteRef, err)
 	}
 	if remote.Hash() == head.Hash() {
+		return nil // already in sync
+	}
+
+	// Local ahead of remote: nothing to merge. This must be checked before
+	// the fast-forward direction, or a local-only commit (Task 5 will start
+	// making these) gets misreported as divergence.
+	ahead, err := s.isAncestor(remote.Hash(), head.Hash())
+	if err != nil {
+		return err
+	}
+	if ahead {
 		return nil
 	}
 
@@ -104,16 +116,26 @@ func (s *Store) Sync(ctx context.Context) error {
 		return ErrNotFastForward
 	}
 
+	// Move the branch ref to the remote hash, then bring the working tree
+	// across with a hard reset rather than Checkout-by-hash. Checkout with a
+	// bare Hash detaches HEAD (writes it as a direct hash reference instead
+	// of a symbolic ref to the branch); every subsequent Sync would then
+	// resolve the branch name as the literal string "HEAD", fail to find
+	// refs/remotes/origin/HEAD, and silently no-op forever. Reset does not
+	// touch HEAD's symbolic-ness, so the branch stays attached. This hard
+	// reset is safe only because the ancestry check above already proved
+	// head is a strict ancestor of remote, so there is nothing local to
+	// lose — keep that ordering.
+	ref := plumbing.NewHashReference(branch, remote.Hash())
+	if err := s.repo.Storer.SetReference(ref); err != nil {
+		return fmt.Errorf("store: update %s: %w", branch, err)
+	}
 	wt, err := s.Worktree()
 	if err != nil {
 		return err
 	}
-	if err := wt.Checkout(&git.CheckoutOptions{Hash: remote.Hash()}); err != nil {
-		return fmt.Errorf("store: fast-forward checkout: %w", err)
-	}
-	ref := plumbing.NewHashReference(head.Name(), remote.Hash())
-	if err := s.repo.Storer.SetReference(ref); err != nil {
-		return fmt.Errorf("store: update %s: %w", head.Name(), err)
+	if err := wt.Reset(&git.ResetOptions{Commit: remote.Hash(), Mode: git.HardReset}); err != nil {
+		return fmt.Errorf("store: fast-forward reset: %w", err)
 	}
 	return nil
 }
