@@ -62,3 +62,43 @@ func TestUnmarshalDefaultsScopeToTeam(t *testing.T) {
 		t.Errorf("Scope = %q, want %q", m.Scope, ScopeTeam)
 	}
 }
+
+func TestMarshalUnmarshalRoundTripBodyEdgeCases(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"empty", ""},
+		{"no trailing newline", "line1"},
+		{"single trailing newline", "line1\n"},
+		{"blank line at end", "line1\n\n"},
+		{"leading blank line", "\nHello"},
+		{"crlf", "text\r\n"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := Memory{
+				ID:      "a1b2c3d4e5f60718",
+				Created: time.Date(2026, 8, 22, 14, 30, 0, 0, time.UTC),
+				Author:  "andrew",
+				Scope:   ScopeTeam,
+				Body:    tc.body,
+			}
+
+			data, err := Marshal(in)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+
+			out, err := Unmarshal(data)
+			if err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+
+			if out.Body != in.Body {
+				t.Errorf("Body = %q, want %q", out.Body, in.Body)
+			}
+		})
+	}
+}

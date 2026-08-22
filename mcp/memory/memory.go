@@ -75,10 +75,9 @@ func Marshal(m Memory) ([]byte, error) {
 	buf.Write(delimiter)
 	buf.Write(y)
 	buf.Write(delimiter)
+	buf.WriteByte('\n')
 	buf.WriteString(m.Body)
-	if len(m.Body) > 0 && m.Body[len(m.Body)-1] != '\n' {
-		buf.WriteByte('\n')
-	}
+	buf.WriteByte('\n')
 	return buf.Bytes(), nil
 }
 
