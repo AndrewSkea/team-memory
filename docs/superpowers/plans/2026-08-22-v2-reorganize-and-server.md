@@ -36,6 +36,7 @@
 | `web/src/routes/organise/+page.svelte` | The reorganize screen. |
 | `docs/deploying.md` | How to run server mode behind a proxy. |
 | `tests/e2e/review.spec.js` | End-to-end cover of the review queue. |
+| `mcp/e2e/install_test.go` | Drives the built binary over a real home: capture, approve, reject, migrate. |
 | `.goreleaser.yaml`, `.github/workflows/` | Building the frontend as part of a release. |
 
 ---
@@ -3133,12 +3134,190 @@ Expected: PASS — seven tests.
 If the run cannot find a browser, `npx playwright install chromium` once. Add
 that line to `.github/workflows/ci.yml` before the e2e step if CI runs it.
 
-- [ ] **Step 7: Run everything**
+- [ ] **Step 7: Prove the installed binary works end to end, without a browser**
+
+The Playwright tests drive the UI. They do not prove that the thing a user
+actually installs works, and they cannot run in an environment with no browser.
+This test does, and it is the regression net that makes later refactoring safe:
+it exercises the real binary over the real on-disk layout, through every stage a
+memory passes on its way from a hook to a commit.
+
+Create `mcp/e2e/install_test.go`. It builds the binary into `t.TempDir()`, points
+`TEAM_MEMORY_HOME` at another `t.TempDir()`, and drives it as a subprocess — no
+package under test is imported, so nothing can pass because of a shared in-process
+shortcut.
+
+```go
+package e2e_test
+
+import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+)
+
+// build compiles the real binary once and returns its path.
+func build(t *testing.T) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "team-memory")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	cmd := exec.Command("go", "build", "-o", bin, ".")
+	cmd.Dir = ".."
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v
+%s", err, out)
+	}
+	return bin
+}
+
+type cli struct {
+	t    *testing.T
+	bin  string
+	home string
+}
+
+func newCLI(t *testing.T) *cli {
+	t.Helper()
+	return &cli{t: t, bin: build(t), home: t.TempDir()}
+}
+
+// run executes the binary and fails the test if it does not exit 0.
+func (c *cli) run(args ...string) string {
+	c.t.Helper()
+	out, err := c.try(args...)
+	if err != nil {
+		c.t.Fatalf("%v: %v
+%s", args, err, out)
+	}
+	return out
+}
+
+func (c *cli) try(args ...string) (string, error) {
+	c.t.Helper()
+	cmd := exec.Command(c.bin, args...)
+	cmd.Env = append(os.Environ(), "TEAM_MEMORY_HOME="+c.home)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func TestInstallThenApproveReachesAGitCommit(t *testing.T) {
+	c := newCLI(t)
+
+	// 1. A fresh machine: init must create the layout from nothing.
+	c.run("init", "--local")
+
+	// 2. A hook captures a memory. It goes to the queue, NOT to the store.
+	c.run("capture", "--body", "The team deploys on Tuesdays.", "--author", "andrew")
+
+	var pending []struct{ ID, Body string }
+	if err := json.Unmarshal([]byte(c.run("pending", "--json")), &pending); err != nil {
+		t.Fatalf("pending --json: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("pending = %d, want 1", len(pending))
+	}
+
+	// 3. Nothing captured is in git yet. This is the product's whole promise.
+	if out := c.run("log", "--oneline"); strings.Contains(out, "Tuesdays") {
+		t.Fatal("captured memory reached git before anyone approved it")
+	}
+
+	// 4. Approve it, and only now does it become a commit.
+	c.run("approve", pending[0].ID)
+	if out := c.run("log", "--oneline"); !strings.Contains(out, "memory:") {
+		t.Fatalf("approve produced no commit:
+%s", out)
+	}
+
+	// 5. It is findable, and the queue is empty again.
+	if out := c.run("search", "Tuesdays"); !strings.Contains(out, "Tuesdays") {
+		t.Fatalf("approved memory is not searchable:
+%s", out)
+	}
+	if out := c.run("pending", "--json"); strings.TrimSpace(out) != "[]" {
+		t.Fatalf("queue not empty after approve: %s", out)
+	}
+}
+
+func TestRejectKeepsItOutOfGitAndRestoreBringsItBack(t *testing.T) {
+	c := newCLI(t)
+	c.run("init", "--local")
+	c.run("capture", "--body", "A thing that should not be kept.", "--author", "andrew")
+
+	var pending []struct{ ID string }
+	_ = json.Unmarshal([]byte(c.run("pending", "--json")), &pending)
+
+	c.run("reject", pending[0].ID, "--reason", "wrong")
+
+	// A rejected memory must never appear in history, under any command.
+	if out := c.run("log", "--oneline"); strings.Contains(out, "should not be kept") {
+		t.Fatal("rejected memory reached git")
+	}
+	if out := c.run("search", "should not be kept"); strings.Contains(out, "should not be kept") {
+		t.Fatal("rejected memory is searchable")
+	}
+
+	// And the human can change their mind.
+	c.run("restore", pending[0].ID)
+	if out := c.run("pending", "--json"); !strings.Contains(out, pending[0].ID) {
+		t.Fatalf("restore did not return it to the queue: %s", out)
+	}
+}
+
+func TestMigrateIsSafeToRunTwice(t *testing.T) {
+	c := newCLI(t)
+	c.run("init", "--local")
+
+	v1 := filepath.Join(c.home, "UNSURE.md")
+	body := "### Entry: Deploys
+
+Deploys happen on Tuesday.
+"
+	if err := os.WriteFile(v1, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c.run("migrate", "--from", v1)
+	first := c.run("pending", "--json")
+
+	c.run("migrate", "--from", v1)
+	if second := c.run("pending", "--json"); second != first {
+		t.Fatalf("second migrate changed the queue:
+first:  %s
+second: %s", first, second)
+	}
+}
+```
+
+Run: `cd mcp && CGO_ENABLED=0 go test ./e2e/ -v`
+Expected: PASS — three tests.
+
+If a subcommand this test names does not exist under exactly that name, the test
+is right and the CLI is wrong: these are the operations the product is for.
+Reconcile by fixing the CLI, not by renaming the test.
+
+Add it to the Makefile so it cannot be forgotten:
+
+```makefile
+test-integration:
+	cd mcp && CGO_ENABLED=0 go test ./e2e/ -count=1
+
+test: test-web test-go test-integration
+```
+
+- [ ] **Step 8: Run everything**
 
 Run: `make test-all`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add -A
@@ -3161,7 +3340,8 @@ git commit -m "chore: remove v1, build the frontend in CI, and test the queue en
 - [ ] `grep -rn "os/exec" mcp/server/` finds nothing.
 - [ ] Nothing in the repository references `copy-prompts`, `mcp/frontend`, `tryListen` or `UNSURE` any more.
 - [ ] `.goreleaser.yaml` builds the frontend before the Go build, and `release.yml` sets up Node.
-- [ ] `make test-all` passes, including the seven end-to-end tests.
+- [ ] `make test-all` passes, including the seven browser end-to-end tests and the three binary-level integration tests.
+- [ ] `cd mcp && CGO_ENABLED=0 go test ./e2e/` passes with no browser installed.
 
 ## What Plan 5 deliberately does not do
 

@@ -39,6 +39,15 @@ func (s *Store) All() ([]memory.Memory, error) {
 		if parseErr != nil {
 			return nil
 		}
+		// The ID comes from file content, and All is the one reader that
+		// cannot re-derive it from the filename (the filename is
+		// "<id>-<slug>.md", and a slug may contain hyphens, so the split is
+		// ambiguous). Refuse an ID that could not have produced a path under
+		// memories/ rather than hand it to a caller that will feed it back
+		// into RepoPath.
+		if memory.ValidID(m.ID) != nil {
+			return nil
+		}
 		out = append(out, m)
 		return nil
 	})

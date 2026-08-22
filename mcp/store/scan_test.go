@@ -435,3 +435,52 @@ func TestRenderIndexEscapingIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestAllSkipsMemoriesWithATraversingID keeps All from handing a caller an ID
+// that cannot legally name a file. All reads the ID out of file content and,
+// unlike every staging reader, cannot re-derive it from the filename. A caller
+// that fed such an ID back into RepoPath would rebuild the exact escape that
+// staging.Take was fixed for, so the file is skipped at the source instead.
+func TestAllSkipsMemoriesWithATraversingID(t *testing.T) {
+	l := newLayout(t)
+	s, _ := Open(l)
+
+	dir := filepath.Join(l.Clone, "memories", "team", "2026", "08")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	for _, id := range []string{"../../../../evil", "..", `..\..\evil`, "c:evil", ".hidden"} {
+		body := "---\nid: " + id + "\nscope: team\nauthor: andrew\n" +
+			"created: 2026-08-22T10:00:00Z\nslug: a-thing\n---\n\nBody.\n"
+		name := filepath.Join(dir, "aaaabbbbccccdddd-a-thing.md")
+		if err := os.WriteFile(name, []byte(body), 0o600); err != nil {
+			t.Fatalf("write %q: %v", id, err)
+		}
+
+		got, err := s.All()
+		if err != nil {
+			t.Fatalf("All (%q): %v", id, err)
+		}
+		if len(got) != 0 {
+			t.Errorf("All returned %d for id %q, want 0", len(got), id)
+		}
+		if err := os.Remove(name); err != nil {
+			t.Fatalf("Remove: %v", err)
+		}
+	}
+
+	// The guard must not reject a legitimate content-addressed ID.
+	good := "---\nid: aaaabbbbccccdddd\nscope: team\nauthor: andrew\n" +
+		"created: 2026-08-22T10:00:00Z\nslug: a-thing\n---\n\nBody.\n"
+	if err := os.WriteFile(filepath.Join(dir, "aaaabbbbccccdddd-a-thing.md"), []byte(good), 0o600); err != nil {
+		t.Fatalf("write good: %v", err)
+	}
+	got, err := s.All()
+	if err != nil {
+		t.Fatalf("All (good): %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("All returned %d for a valid id, want 1", len(got))
+	}
+}

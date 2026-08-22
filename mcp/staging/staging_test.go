@@ -471,8 +471,10 @@ func TestRejectUnknownIDLeavesNoOrphanSidecar(t *testing.T) {
 }
 
 // TestTakeIsAtomicConcurrentCallersDontDoubleTake proves two concurrent
-// Take calls on the same id cannot both succeed — the atomic claim rename
-// means exactly one caller gets the memory and the other gets an error.
+// Take calls on the same id cannot both succeed — the O_CREATE|O_EXCL claim
+// marker means exactly one caller gets the memory and the other gets an error.
+// (os.Rename is not usable here: on Windows, concurrent renames of one source
+// to distinct destinations return nil to every caller.)
 func TestTakeIsAtomicConcurrentCallersDontDoubleTake(t *testing.T) {
 	a, _ := newArea(t)
 	if err := a.Add(mem("8888888888888888", "Racy.")); err != nil {
@@ -623,5 +625,39 @@ func TestTakeRefusesFreshClaim(t *testing.T) {
 	// The memory itself must be untouched: still on disk, still parseable.
 	if _, err := os.Stat(filepath.Join(l.Pending, id+".md")); err != nil {
 		t.Fatalf("expected the pending memory to remain untouched, stat err = %v", err)
+	}
+}
+
+// TestTakeReleasesItsClaimWhenTheFileCannotBeRead pins the release in Take's
+// readPending failure path. Without it an unreadable pending file — exactly
+// the case a human is most likely to be fixing in a text editor right now —
+// stays wedged behind a live claim for a whole staleClaimAge, and Pending()
+// hides it for that long. The behaviour was correct but asserted nowhere, so
+// deleting the os.Remove passed the entire suite.
+func TestTakeReleasesItsClaimWhenTheFileCannotBeRead(t *testing.T) {
+	a, l := newArea(t)
+
+	const id = "7777777777777777"
+	p := filepath.Join(l.Pending, id+".md")
+	// Frontmatter that cannot be parsed: readPending fails after the claim.
+	if err := os.WriteFile(p, []byte("---\nnot: [valid\n"), 0o600); err != nil {
+		t.Fatalf("write pending: %v", err)
+	}
+
+	if _, err := a.Take(id); err == nil {
+		t.Fatal("Take must fail on an unparsable pending file")
+	}
+
+	if _, err := os.Stat(p + ".taking"); !os.IsNotExist(err) {
+		t.Fatalf("claim marker must not survive a failed Take; stat err = %v", err)
+	}
+
+	// And the id is immediately re-takeable once the file is repaired, rather
+	// than waiting out staleClaimAge.
+	if err := a.Add(mem(id, "Repaired.")); err != nil {
+		t.Fatalf("Add after repair: %v", err)
+	}
+	if _, err := a.Take(id); err != nil {
+		t.Fatalf("Take after repair: %v", err)
 	}
 }
