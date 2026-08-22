@@ -58,6 +58,13 @@ func (s *Store) All() ([]memory.Memory, error) {
 // RenderIndex produces INDEX.md from the memories themselves. It is a pure
 // function: no filesystem access, so regenerating from the same slice always
 // yields the same bytes and is cheap to test for determinism.
+//
+// Every field that ultimately comes from a memory file's frontmatter (ID,
+// scope, author, tags, slug) is attacker-or-accident controlled text —
+// memory.Unmarshal reads it straight off disk with no validation upstream —
+// so each is escaped at this render boundary before it goes into a table
+// cell. Escaping here, not upstream, is deliberate: this is the one place
+// that knows it is building a Markdown table and has one to corrupt.
 func RenderIndex(ms []memory.Memory) string {
 	var b strings.Builder
 	b.WriteString("# INDEX for team-memory\n\n")
@@ -66,15 +73,30 @@ func RenderIndex(ms []memory.Memory) string {
 	b.WriteString("|---|---|---|---|---|---|\n")
 	for _, m := range ms {
 		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s |\n",
-			m.ID,
+			escapeCell(m.ID),
 			m.Created.UTC().Format("2006-01-02"),
-			m.Scope,
-			m.Author,
-			strings.Join(m.Tags, " "),
-			m.Slug,
+			escapeCell(string(m.Scope)),
+			escapeCell(m.Author),
+			escapeCell(strings.Join(m.Tags, " ")),
+			escapeCell(m.Slug),
 		)
 	}
 	return b.String()
+}
+
+// escapeCell makes s safe to interpolate into a single Markdown table cell:
+// afterward it can contain neither "|" (which would open a spurious cell)
+// nor any newline form (which would split the row and derange every row
+// that follows it in the file). Backslash is escaped first, before any
+// escape sequence is introduced, so the escaping itself stays unambiguous
+// and reversible.
+func escapeCell(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "\r\n", `\n`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\r", `\n`)
+	s = strings.ReplaceAll(s, "|", `\|`)
+	return s
 }
 
 // RegenerateIndex rewrites INDEX.md from the memories on disk and commits it

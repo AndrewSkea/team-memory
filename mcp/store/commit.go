@@ -144,6 +144,16 @@ func (s *Store) commitPath(abs, msg string) (plumbing.Hash, error) {
 		},
 	})
 	if err != nil {
+		// A clean worktree — staging succeeded but produced a tree identical
+		// to HEAD — is not a failure: the caller asked for content to exist
+		// at abs, and it already does, byte for byte. Every other failure in
+		// this function returns before this point (assertInsideClone above,
+		// or the Add error above with its own wrapped error), so reaching
+		// here with ErrEmptyCommit means staging genuinely succeeded and
+		// there is nothing false being reclassified as success.
+		if errors.Is(err, git.ErrEmptyCommit) {
+			return plumbing.ZeroHash, nil
+		}
 		return plumbing.ZeroHash, fmt.Errorf("store: commit %q: %w", slashed, err)
 	}
 	return hash, nil

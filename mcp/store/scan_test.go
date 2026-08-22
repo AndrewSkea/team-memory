@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AndrewSkea/team-memory/mcp/memory"
+	"github.com/go-git/go-git/v5/plumbing"
 )
 
 func TestAllReturnsDeterministicOrder(t *testing.T) {
@@ -181,15 +182,13 @@ func TestRegenerateIndexIsDeterministicAcrossRuns(t *testing.T) {
 	}
 }
 
-// TestRegenerateIndexOnUnchangedMemoriesIsNoop documents the actual behaviour
-// when RegenerateIndex is called again with no memory changes since the last
-// regeneration: content is byte-identical, so the working tree has nothing
-// new to stage and commitPath's underlying commit legitimately reports no
-// changes. This is not a bug to fix here — it is the same "empty commit"
-// behaviour every other write in this store already has — but it is worth
-// pinning down so a future change to commitPath's empty-commit handling does
-// not silently start committing spurious no-op commits (contradicting
-// Decision 2) or silently swallowing a real error.
+// TestRegenerateIndexOnUnchangedMemoriesIsNoop asserts that calling
+// RegenerateIndex again with no memory changes since the last regeneration
+// is a successful no-op: content is byte-identical, so there is nothing new
+// to stage, commitPath's underlying commit legitimately reports
+// git.ErrEmptyCommit, and commitPath treats a clean worktree as success
+// rather than an error. It proves the no-op actually happened — HEAD does
+// not move — not merely that the second call returned without error.
 func TestRegenerateIndexOnUnchangedMemoriesIsNoop(t *testing.T) {
 	l := newLayout(t)
 	s, _ := Open(l)
@@ -199,8 +198,26 @@ func TestRegenerateIndexOnUnchangedMemoriesIsNoop(t *testing.T) {
 	if _, err := s.RegenerateIndex(); err != nil {
 		t.Fatalf("RegenerateIndex (1st): %v", err)
 	}
-	if _, err := s.RegenerateIndex(); err == nil {
-		t.Fatal("expected 2nd RegenerateIndex with no changes to report an error (no-op empty commit), got nil")
+
+	headBefore, err := s.repo.Head()
+	if err != nil {
+		t.Fatalf("Head (before): %v", err)
+	}
+
+	hash, err := s.RegenerateIndex()
+	if err != nil {
+		t.Fatalf("RegenerateIndex (2nd, no changes) must succeed as a no-op, got: %v", err)
+	}
+	if hash != plumbing.ZeroHash {
+		t.Errorf("RegenerateIndex (2nd, no changes) returned hash %s, want ZeroHash", hash)
+	}
+
+	headAfter, err := s.repo.Head()
+	if err != nil {
+		t.Fatalf("Head (after): %v", err)
+	}
+	if headBefore.Hash() != headAfter.Hash() {
+		t.Errorf("HEAD moved on a no-op RegenerateIndex: %s -> %s", headBefore.Hash(), headAfter.Hash())
 	}
 }
 
@@ -223,5 +240,198 @@ func TestRegenerateIndexDoesNotIndexItself(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Errorf("All returned %d after regenerating INDEX.md, want 1 (INDEX.md must not be scanned as a memory)", len(got))
+	}
+}
+
+// renderedLines returns rendered split into its lines with the single
+// trailing newline (every row ends in "\n") removed first, so callers get
+// exactly one string per line with no spurious trailing empty element.
+func renderedLines(t *testing.T, rendered string) []string {
+	t.Helper()
+	return strings.Split(strings.TrimSuffix(rendered, "\n"), "\n")
+}
+
+// tableRowFields splits one already-escaped table row on "|" and asserts it
+// has exactly the 8 pieces a 6-column "| a | b | c | d | e | f |" row
+// produces (an empty piece before the leading "|" and after the trailing
+// "|", plus one piece per column). A hostile "|" that escaped correctly
+// leaves the row's own column count unchanged; a "|" that leaked through
+// unescaped opens a spurious cell and this count catches it directly.
+// tableCellPlaceholder stands in for an escaped pipe ("\|") while counting
+// cell boundaries, exactly as a real Markdown table parser treats it: not a
+// delimiter. Splitting on raw "|" would flag every correctly escaped pipe as
+// a spurious cell, which is the opposite of what this check is for.
+const tableCellPlaceholder = "\x00ESCAPED-PIPE\x00"
+
+func tableRowFields(t *testing.T, row string) []string {
+	t.Helper()
+	masked := strings.ReplaceAll(row, `\|`, tableCellPlaceholder)
+	fields := strings.Split(masked, "|")
+	if len(fields) != 8 {
+		t.Fatalf("row %q has %d cell boundaries (unescaped \"|\"s), want 8 (a leaked \"|\" opened a spurious cell): %q", row, len(fields), fields)
+	}
+	for i := range fields {
+		fields[i] = strings.ReplaceAll(fields[i], tableCellPlaceholder, `\|`)
+	}
+	return fields
+}
+
+func TestRenderIndexEscapesPipeInSlug(t *testing.T) {
+	hostile := newMemory("Body.")
+	hostile.Created = time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+	hostile.Slug = "danger|ous"
+	hostile.ID = memory.ComputeID(hostile)
+
+	sentinel := newMemory("Sentinel body.")
+	sentinel.Created = time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	sentinel.Slug = "sentinel-row"
+	sentinel.ID = memory.ComputeID(sentinel)
+
+	rendered := RenderIndex([]memory.Memory{hostile, sentinel})
+	lines := renderedLines(t, rendered)
+	// 4 header lines ("# INDEX...", "", "Generated file...", "") + 2 table
+	// header lines + one line per memory.
+	wantLines := 6 + 2
+	if len(lines) != wantLines {
+		t.Fatalf("rendered has %d lines, want %d (a leaked \"|\" split a row): %q", len(lines), wantLines, lines)
+	}
+
+	hostileLine := lines[len(lines)-2]
+	tableRowFields(t, hostileLine)
+	if !strings.Contains(hostileLine, `danger\|ous`) {
+		t.Errorf("hostile row does not contain the escaped slug: %q", hostileLine)
+	}
+
+	sentinelLine := lines[len(lines)-1]
+	fields := tableRowFields(t, sentinelLine)
+	if !strings.Contains(sentinelLine, sentinel.ID) || !strings.Contains(sentinelLine, "sentinel-row") {
+		t.Errorf("sentinel row was deranged by the preceding hostile row: %q", sentinelLine)
+	}
+	_ = fields
+}
+
+func TestRenderIndexEscapesNewlineInSlug(t *testing.T) {
+	hostile := newMemory("Body.")
+	hostile.Created = time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+	hostile.Slug = "line1\nline2"
+	hostile.ID = memory.ComputeID(hostile)
+
+	sentinel := newMemory("Sentinel body.")
+	sentinel.Created = time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	sentinel.Slug = "sentinel-row"
+	sentinel.ID = memory.ComputeID(sentinel)
+
+	rendered := RenderIndex([]memory.Memory{hostile, sentinel})
+	lines := renderedLines(t, rendered)
+	wantLines := 6 + 2
+	if len(lines) != wantLines {
+		t.Fatalf("rendered has %d lines, want %d (an embedded newline split a row): %q", len(lines), wantLines, lines)
+	}
+
+	hostileLine := lines[len(lines)-2]
+	tableRowFields(t, hostileLine)
+	if !strings.Contains(hostileLine, `line1\nline2`) {
+		t.Errorf("hostile row does not contain the escaped newline: %q", hostileLine)
+	}
+
+	sentinelLine := lines[len(lines)-1]
+	tableRowFields(t, sentinelLine)
+	if !strings.Contains(sentinelLine, sentinel.ID) || !strings.Contains(sentinelLine, "sentinel-row") {
+		t.Errorf("sentinel row was deranged by the preceding hostile row's embedded newline: %q", sentinelLine)
+	}
+}
+
+func TestRenderIndexEscapesPipeAndNewlineInAuthor(t *testing.T) {
+	hostile := newMemory("Body.")
+	hostile.Created = time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+	hostile.Author = "eve|attacker\ninjected row"
+	hostile.ID = memory.ComputeID(hostile)
+
+	sentinel := newMemory("Sentinel body.")
+	sentinel.Created = time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	sentinel.Slug = "sentinel-row"
+	sentinel.ID = memory.ComputeID(sentinel)
+
+	rendered := RenderIndex([]memory.Memory{hostile, sentinel})
+	lines := renderedLines(t, rendered)
+	wantLines := 6 + 2
+	if len(lines) != wantLines {
+		t.Fatalf("rendered has %d lines, want %d (hostile author split a row): %q", len(lines), wantLines, lines)
+	}
+
+	hostileLine := lines[len(lines)-2]
+	tableRowFields(t, hostileLine)
+	if !strings.Contains(hostileLine, `eve\|attacker\ninjected row`) {
+		t.Errorf("hostile row does not contain the escaped author: %q", hostileLine)
+	}
+
+	sentinelLine := lines[len(lines)-1]
+	tableRowFields(t, sentinelLine)
+	if !strings.Contains(sentinelLine, sentinel.ID) || !strings.Contains(sentinelLine, "sentinel-row") {
+		t.Errorf("sentinel row was deranged by the preceding hostile author: %q", sentinelLine)
+	}
+}
+
+func TestRenderIndexEscapesPipeInTag(t *testing.T) {
+	hostile := newMemory("Body.")
+	hostile.Created = time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
+	hostile.Tags = []string{"good", "bad|tag"}
+	hostile.ID = memory.ComputeID(hostile)
+
+	sentinel := newMemory("Sentinel body.")
+	sentinel.Created = time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	sentinel.Slug = "sentinel-row"
+	sentinel.ID = memory.ComputeID(sentinel)
+
+	rendered := RenderIndex([]memory.Memory{hostile, sentinel})
+	lines := renderedLines(t, rendered)
+	wantLines := 6 + 2
+	if len(lines) != wantLines {
+		t.Fatalf("rendered has %d lines, want %d (hostile tag split a row): %q", len(lines), wantLines, lines)
+	}
+
+	hostileLine := lines[len(lines)-2]
+	tableRowFields(t, hostileLine)
+	if !strings.Contains(hostileLine, `bad\|tag`) {
+		t.Errorf("hostile row does not contain the escaped tag: %q", hostileLine)
+	}
+
+	sentinelLine := lines[len(lines)-1]
+	tableRowFields(t, sentinelLine)
+	if !strings.Contains(sentinelLine, sentinel.ID) || !strings.Contains(sentinelLine, "sentinel-row") {
+		t.Errorf("sentinel row was deranged by the preceding hostile tag: %q", sentinelLine)
+	}
+}
+
+// TestRenderIndexEscapingIsDeterministic re-runs the byte-identity check
+// with hostile values (pipes, newlines, backslashes) mixed into the set, so
+// escaping cannot have introduced any nondeterminism (e.g. via map
+// iteration in some future rewrite).
+func TestRenderIndexEscapingIsDeterministic(t *testing.T) {
+	base := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	hostileValues := []string{
+		"plain",
+		"pipe|here",
+		"newline\nhere",
+		"crlf\r\nhere",
+		`backslash\here`,
+		`mixed\|\n"`,
+	}
+	var ms []memory.Memory
+	for i, v := range hostileValues {
+		m := newMemory("Body.")
+		m.Created = base.Add(time.Duration(i) * time.Hour)
+		m.Author = v
+		m.Slug = v
+		m.Tags = []string{v}
+		m.ID = memory.ComputeID(m)
+		ms = append(ms, m)
+	}
+
+	first := RenderIndex(ms)
+	for i := 0; i < 5; i++ {
+		if got := RenderIndex(ms); got != first {
+			t.Fatalf("RenderIndex with hostile values produced different bytes on run %d", i)
+		}
 	}
 }
