@@ -137,6 +137,16 @@ func (a *Area) Pending() ([]memory.Memory, error) {
 	return ms, nil
 }
 
+// staleClaimAge is far beyond any real Take: Take does one read, one parse,
+// and one remove, which completes in milliseconds, not minutes. A claim
+// marker older than this cannot belong to a live caller — it can only be
+// left over from a process that crashed between creating the marker and
+// removing it. Do not lower this "to make recovery snappier"; a threshold
+// close to how long a real Take can take reintroduces the double-take that
+// the marker exists to prevent, since a live caller's marker could then be
+// mistaken for stale and reclaimed out from under it.
+const staleClaimAge = time.Minute
+
 // Take atomically claims a pending memory, reads it, and removes it. Used
 // when a memory is approved and about to be committed.
 //
@@ -161,15 +171,15 @@ func (a *Area) Take(id string) (memory.Memory, error) {
 	p := a.pendingPath(id)
 	claim := p + ".taking"
 
-	lock, err := os.OpenFile(claim, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	lock, err := a.claimPending(claim)
 	if err != nil {
 		return memory.Memory{}, fmt.Errorf("staging: claim pending %s: %w", id, err)
 	}
 	lock.Close()
 	// The marker's only job is exclusion; once we hold it (or fail to), we
 	// no longer need it on disk. Best-effort: a leftover marker after a
-	// crash mid-Take is a known, accepted operational gap, not something
-	// this call can fix for itself.
+	// crash mid-Take is recovered by the next Take's claimPending call
+	// (see staleClaimAge), not by this defer.
 	defer os.Remove(claim)
 
 	data, err := os.ReadFile(p)
@@ -184,6 +194,43 @@ func (a *Area) Take(id string) (memory.Memory, error) {
 		return memory.Memory{}, fmt.Errorf("staging: remove pending %s: %w", id, err)
 	}
 	return m, nil
+}
+
+// claimPending opens the exclusive claim marker for a pending Take. If the
+// marker already exists, it is either held by a live concurrent Take (in
+// which case this call must lose) or left over from a Take whose process
+// crashed before it could remove its own marker (in which case this call
+// must be able to recover, or the memory becomes permanently un-takeable).
+//
+// The two are told apart by the marker's age: a live Take's marker is never
+// older than staleClaimAge, because Take itself completes in milliseconds.
+// If the existing marker is older than that, it is reclaimed and the claim
+// is retried exactly once — not looped, so that if the retry also loses,
+// the loser correctly concludes a live competitor claimed it in between and
+// returns the ordinary "already claimed" error rather than fighting forever.
+func (a *Area) claimPending(claim string) (*os.File, error) {
+	lock, err := os.OpenFile(claim, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err == nil {
+		return lock, nil
+	}
+	if !os.IsExist(err) {
+		return nil, err
+	}
+
+	info, statErr := os.Stat(claim)
+	if statErr != nil {
+		// The marker existed a moment ago (our O_EXCL open just failed
+		// because of it) but is gone now — its owner finished and removed
+		// it between our two calls. That's an ordinary race, not staleness;
+		// retry once and return whatever that attempt reports.
+		return os.OpenFile(claim, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	}
+	if time.Since(info.ModTime()) < staleClaimAge {
+		return nil, err
+	}
+
+	_ = os.Remove(claim)
+	return os.OpenFile(claim, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 }
 
 // Reject moves a pending memory to the bin with a reason. Rejection is

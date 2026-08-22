@@ -551,3 +551,61 @@ func TestRejectSidecarNeverLagsRename(t *testing.T) {
 		}
 	}
 }
+
+// TestTakeReclaimsStaleClaim proves a claim marker left behind by a process
+// that crashed mid-Take does not make the memory permanently un-takeable.
+// A marker older than staleClaimAge cannot belong to a live caller, so Take
+// must reclaim it and succeed.
+func TestTakeReclaimsStaleClaim(t *testing.T) {
+	a, l := newArea(t)
+	id := "6666666666666666"
+	if err := a.Add(mem(id, "body")); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	claim := filepath.Join(l.Pending, id+".md.taking")
+	if err := os.WriteFile(claim, nil, 0o600); err != nil {
+		t.Fatalf("plant stale claim: %v", err)
+	}
+	old := time.Now().Add(-2 * staleClaimAge)
+	if err := os.Chtimes(claim, old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	m, err := a.Take(id)
+	if err != nil {
+		t.Fatalf("Take should have reclaimed the stale marker and succeeded, got: %v", err)
+	}
+	if m.ID != id {
+		t.Fatalf("got memory id %q, want %q", m.ID, id)
+	}
+	if _, err := os.Stat(claim); !os.IsNotExist(err) {
+		t.Fatalf("expected the reclaimed claim marker to be gone after Take, stat err = %v", err)
+	}
+}
+
+// TestTakeRefusesFreshClaim proves the stale-claim recovery path in
+// TestTakeReclaimsStaleClaim cannot be used to steal a live claim: a marker
+// younger than staleClaimAge must still cause Take to refuse, exactly as it
+// did before the recovery path existed.
+func TestTakeRefusesFreshClaim(t *testing.T) {
+	a, l := newArea(t)
+	id := "5555555555555555"
+	if err := a.Add(mem(id, "body")); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	claim := filepath.Join(l.Pending, id+".md.taking")
+	if err := os.WriteFile(claim, nil, 0o600); err != nil {
+		t.Fatalf("plant fresh claim: %v", err)
+	}
+
+	if _, err := a.Take(id); err == nil {
+		t.Fatalf("Take should have refused: a fresh claim marker means a live caller holds it")
+	}
+
+	// The memory itself must be untouched: still on disk, still parseable.
+	if _, err := os.Stat(filepath.Join(l.Pending, id+".md")); err != nil {
+		t.Fatalf("expected the pending memory to remain untouched, stat err = %v", err)
+	}
+}
