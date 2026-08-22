@@ -118,6 +118,53 @@ func TestPendingListsItemWithStaleClaim(t *testing.T) {
 	}
 }
 
+// TestClaimFreshnessThresholdIsPinned pins the actual VALUE of
+// staleClaimAge, not merely that some threshold exists. The ages are
+// absolute, deliberately: a test phrased in multiples of staleClaimAge is
+// scale-invariant and passes for any value at all, including a nanosecond,
+// which is exactly how the previous version of this test let a
+// nanosecond-threshold mutant survive. These two cases bracket the constant
+// into (5s, 10m]: shrink it below five seconds and the first case fails,
+// grow it past ten minutes and the second does.
+//
+// The mtimes are set with Chtimes rather than by sleeping, so the assertion
+// does not depend on filesystem timestamp granularity either.
+func TestClaimFreshnessThresholdIsPinned(t *testing.T) {
+	cases := []struct {
+		name       string
+		age        time.Duration
+		wantRefuse bool
+	}{
+		{"five seconds old is a live claim", 5 * time.Second, true},
+		{"ten minutes old is a stale claim", 10 * time.Minute, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a, l := newArea(t)
+			id := "4444555566667777"
+			if err := a.Add(mem(id, "body")); err != nil {
+				t.Fatalf("Add: %v", err)
+			}
+			claim := filepath.Join(l.Pending, id+".md.taking")
+			if err := os.WriteFile(claim, nil, 0o600); err != nil {
+				t.Fatalf("plant claim: %v", err)
+			}
+			when := time.Now().Add(-tc.age)
+			if err := os.Chtimes(claim, when, when); err != nil {
+				t.Fatalf("Chtimes: %v", err)
+			}
+
+			_, err := a.Take(id)
+			if tc.wantRefuse && err == nil {
+				t.Fatalf("Take stole a claim only %s old; staleClaimAge is %s and must be longer than that", tc.age, staleClaimAge)
+			}
+			if !tc.wantRefuse && err != nil {
+				t.Fatalf("Take refused a claim %s old; staleClaimAge is %s and must be shorter than that: %v", tc.age, staleClaimAge, err)
+			}
+		})
+	}
+}
+
 // TestFutureDatedClaimIsStale closes the mirror image of the crashed-process
 // case. A marker whose mtime is in the future (clock skew, a restored
 // backup, a hand-edited file) is never "older than staleClaimAge" under a
