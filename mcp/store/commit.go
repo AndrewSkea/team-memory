@@ -71,6 +71,16 @@ func (s *Store) Remove(repoPath, msg string) (plumbing.Hash, error) {
 	return s.commitPath(abs, msg)
 }
 
+// PutRaw commits a file that already exists inside the clone. The path is
+// repo-relative and passes through the same guard as every other write.
+func (s *Store) PutRaw(repoPath, msg string) (plumbing.Hash, error) {
+	abs := filepath.Join(s.layout.Clone, filepath.FromSlash(repoPath))
+	if err := s.assertInsideClone(abs); err != nil {
+		return plumbing.ZeroHash, err
+	}
+	return s.commitPath(abs, msg)
+}
+
 // assertInsideClone is the guard: the single funnel every write path in this
 // package passes through, and the single place to audit. Task 9's PutRaw must
 // call this and nothing else.
