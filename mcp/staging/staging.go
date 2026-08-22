@@ -15,7 +15,7 @@
 // are a human looking at one in a text editor: it means somebody is
 // mid-approval of that memory, and Pending() therefore hides the memory
 // while it exists. A marker whose mtime is more than staleClaimAge away from
-// now belongs to no live caller and is ignored and
+// now (in EITHER direction) belongs to no live caller and is ignored and
 // reclaimed, so deleting one by hand is safe but rarely necessary.
 package staging
 
@@ -261,11 +261,15 @@ func (a *Area) Abort(id string) error {
 }
 
 // claimIsStale reports whether a claim marker with this mtime cannot belong
-// to a live caller: a marker this old is the crashed-process case, left
-// behind by a Take that never reached Done or Abort.
+// to a live caller. A marker far enough in the PAST is the crashed-process
+// case. A marker in the FUTURE is the same problem reached from the other
+// direction - clock skew, a restored backup, a hand-edited file - and under a
+// plain time.Since check it is never stale, so it would wedge the id until
+// wall-clock caught up with it. Both directions are measured against the same
+// threshold.
 func claimIsStale(mod time.Time) bool {
 	age := time.Since(mod)
-	return age >= staleClaimAge
+	return age >= staleClaimAge || age <= -staleClaimAge
 }
 
 // claimHeld reports whether a live (non-stale) claim marker exists for a

@@ -117,3 +117,32 @@ func TestPendingListsItemWithStaleClaim(t *testing.T) {
 		t.Fatalf("a stale claim must not hide a pending memory, got %d", len(pending))
 	}
 }
+
+// TestFutureDatedClaimIsStale closes the mirror image of the crashed-process
+// case. A marker whose mtime is in the future (clock skew, a restored
+// backup, a hand-edited file) is never "older than staleClaimAge" under a
+// naive time.Since check, so it wedges the id until wall-clock catches up —
+// the same permanently-un-takeable state the stale-claim recovery exists to
+// prevent, reached from the other direction.
+func TestFutureDatedClaimIsStale(t *testing.T) {
+	a, l := newArea(t)
+	id := "5555666677778888"
+	if err := a.Add(mem(id, "body")); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	claim := filepath.Join(l.Pending, id+".md.taking")
+	if err := os.WriteFile(claim, nil, 0o600); err != nil {
+		t.Fatalf("plant claim: %v", err)
+	}
+	future := time.Now().Add(2 * staleClaimAge)
+	if err := os.Chtimes(claim, future, future); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	if _, err := a.Take(id); err != nil {
+		t.Fatalf("a future-dated claim must be treated as stale, not as a live claim: %v", err)
+	}
+	if pending, _ := a.Pending(); len(pending) != 0 {
+		t.Fatalf("after a successful Take the item is claimed and must not be listed, got %d", len(pending))
+	}
+}
