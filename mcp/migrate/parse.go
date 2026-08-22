@@ -66,6 +66,15 @@ func ParseEntries(source, content string) ([]memory.Memory, []Unparsed) {
 // no error and no count anywhere. The blocks themselves still carry the
 // original, undecorated line text: only the classification decision is
 // normalised, not the content.
+//
+// The cost of that, accepted deliberately: an indented or quoted
+// "### Entry:" that is only DECORATION — inside a fenced code block, or in a
+// body line quoting another entry — now splits the block too, where before it
+// was inert. Nothing is lost when it does. The fragment after the split fails
+// to parse and is reported in Unparsed, where a human can see it and fix the
+// source document; the alternative failure (two real memories silently merged
+// into one, with no error and no count anywhere) is invisible. See
+// TestIndentedEntryHeaderInsideCodeFenceSplitsTheBlock, which pins this.
 func splitBlocks(content string) []string {
 	content = strings.TrimPrefix(content, bom)
 	lines := strings.Split(content, "\n")

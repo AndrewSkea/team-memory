@@ -262,3 +262,62 @@ func TestParseEntriesDoesNotDuplicateTitleAlreadyPresent(t *testing.T) {
 		t.Errorf("Body = %q, title should appear exactly once", got[0].Body)
 	}
 }
+
+// TestIndentedEntryHeaderInsideCodeFenceSplitsTheBlock pins a deliberate
+// trade-off rather than a nice property. Normalising leading whitespace and
+// blockquote markers before the header check is what stops a hand-indented
+// or pasted-into-a-reply entry being swallowed into the previous entry's
+// body, silently merging two memories into one. The cost is that an indented
+// "### Entry:" that is only DECORATION - inside a fenced code block, or in a
+// quoted body line - now splits the block too, where before it was inert.
+//
+// That was ruled the right trade because it loses nothing: the fragment
+// after the split is not silently dropped, it fails to parse and is reported
+// in Unparsed where a human can see it and fix the source document. This
+// test exists so a future change to splitBlocks cannot flip the behaviour
+// back without someone consciously deleting the test.
+func TestIndentedEntryHeaderInsideCodeFenceSplitsTheBlock(t *testing.T) {
+	const doc = "# Topic\n" +
+		"\n" +
+		"### Entry: 2026-05-12T09:30:00Z — A real entry\n" +
+		"**Scope:** team\n" +
+		"**Summary:** Has a code sample.\n" +
+		"**Full:**\n" +
+		"Here is what a v1 entry looks like:\n" +
+		"\n" +
+		"```\n" +
+		"    ### Entry: not a real header, just an example\n" +
+		"```\n" +
+		"\n" +
+		"> quoting the same thing:\n" +
+		"> ### Entry: also only decoration\n"
+
+	got, bad := ParseEntries("TOPIC.md", doc)
+	if len(got) != 1 {
+		t.Fatalf("got %d parsed entries, want 1 (the real one)", len(got))
+	}
+	if len(bad) != 2 {
+		t.Fatalf("got %d unparsed fragments, want 2 (the fenced one and the quoted one)", len(bad))
+	}
+
+	// Nothing is lost: every fragment is reported verbatim, with a reason.
+	for _, u := range bad {
+		if strings.TrimSpace(u.Raw) == "" {
+			t.Errorf("an unparsed fragment carries no raw text: %+v", u)
+		}
+		if u.Reason == "" {
+			t.Errorf("an unparsed fragment carries no reason: %+v", u)
+		}
+	}
+	if !strings.Contains(bad[0].Raw, "not a real header") {
+		t.Errorf("first fragment should be the fenced line, got %q", bad[0].Raw)
+	}
+	if !strings.Contains(bad[1].Raw, "also only decoration") {
+		t.Errorf("second fragment should be the quoted line, got %q", bad[1].Raw)
+	}
+
+	// And the real entry keeps everything up to the first decoration line.
+	if !strings.Contains(got[0].Body, "Here is what a v1 entry looks like") {
+		t.Errorf("the real entry lost its body: %q", got[0].Body)
+	}
+}
