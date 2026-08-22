@@ -14,6 +14,13 @@ import (
 
 const entryPrefix = "### Entry:"
 
+// bom is the UTF-8 byte-order mark some editors and export tools prepend to
+// a file. Left in place it hides the file's first "### Entry:" header from
+// every prefix check below, so the header is neither parsed nor reported as
+// unparsed; it simply vanishes. Stripping it once, up front, is cheaper and
+// safer than teaching every downstream check about it.
+const bom = "\uFEFF"
+
 // unknownAuthor is used for a v1 "personal" entry, because v1's rendered
 // block (mcp/hook/render.go) carries no author field at all — only Scope,
 // Type, Tags, Source (a session id, not a person), Summary, Bullets and
@@ -50,12 +57,22 @@ func ParseEntries(source, content string) ([]memory.Memory, []Unparsed) {
 }
 
 // splitBlocks returns each "### Entry:" block, header line included.
+//
+// A line only has to look like a header once its incidental decoration is
+// stripped: leading whitespace (an entry hand-indented inside a list) and a
+// leading blockquote marker (an entry pasted into a reply). Checking the raw
+// line against entryPrefix alone would silently fold such a header into the
+// body of whatever entry came before it, merging two memories into one with
+// no error and no count anywhere. The blocks themselves still carry the
+// original, undecorated line text: only the classification decision is
+// normalised, not the content.
 func splitBlocks(content string) []string {
+	content = strings.TrimPrefix(content, bom)
 	lines := strings.Split(content, "\n")
 	var blocks []string
 	var cur []string
 	for _, line := range lines {
-		if strings.HasPrefix(line, entryPrefix) {
+		if isEntryHeaderLine(line) {
 			if len(cur) > 0 {
 				blocks = append(blocks, strings.Join(cur, "\n"))
 			}
@@ -72,9 +89,29 @@ func splitBlocks(content string) []string {
 	return blocks
 }
 
+// isEntryHeaderLine reports whether line is a "### Entry:" header once
+// leading whitespace and blockquote markers are stripped.
+func isEntryHeaderLine(line string) bool {
+	return strings.HasPrefix(normalizeHeaderLine(line), entryPrefix)
+}
+
+// normalizeHeaderLine strips leading whitespace and any leading blockquote
+// markers ("> ", possibly nested) so a decorated header line can be matched
+// and parsed the same way as an undecorated one.
+func normalizeHeaderLine(line string) string {
+	for {
+		trimmed := strings.TrimLeft(line, " \t")
+		if !strings.HasPrefix(trimmed, ">") {
+			return trimmed
+		}
+		trimmed = strings.TrimPrefix(trimmed, ">")
+		line = strings.TrimLeft(trimmed, " \t")
+	}
+}
+
 func parseBlock(block string) (memory.Memory, error) {
 	lines := strings.Split(block, "\n")
-	header := strings.TrimSpace(strings.TrimPrefix(lines[0], entryPrefix))
+	header := strings.TrimSpace(strings.TrimPrefix(normalizeHeaderLine(lines[0]), entryPrefix))
 
 	// "2026-05-12T09:30:00Z — Title". The separator is an em dash, matching
 	// the format mcp/hook/render.go actually produces.
@@ -86,6 +123,7 @@ func parseBlock(block string) (memory.Memory, error) {
 	if err != nil {
 		return memory.Memory{}, fmt.Errorf("unparsable timestamp %q", strings.TrimSpace(ts))
 	}
+	rawTitle := strings.TrimSpace(title)
 
 	fields := map[string]string{}
 	var full []string
@@ -104,14 +142,32 @@ func parseBlock(block string) (memory.Memory, error) {
 		}
 	}
 
+	body := buildBody(fields["Summary"], fields["Bullets"], full)
+	if body == "" {
+		return memory.Memory{}, fmt.Errorf("entry has no body")
+	}
+	// The slug is capped at 48 characters (memory.Slugify), so a long
+	// hand-written title is otherwise unrecoverable from the migrated file.
+	// Carrying it as a heading keeps it, without adding a field to
+	// memory.Memory that every other package would then have to know about.
+	body = prependTitleHeading(rawTitle, body)
+
 	scope := mapScope(fields["Scope"])
+	tags := splitTags(fields["Tags"])
+	// v1's Type (decision, preference, ...) had nowhere to land in v2 and was
+	// silently discarded. Folding it into Tags needs no schema change; skip
+	// it only when it is empty or already present.
+	if typ := strings.TrimSpace(fields["Type"]); typ != "" && !containsFold(tags, typ) {
+		tags = append(tags, typ)
+	}
+
 	m := memory.Memory{
 		Created:       created,
-		Slug:          memory.Slugify(strings.TrimSpace(title)),
+		Slug:          memory.Slugify(rawTitle),
 		Scope:         scope,
-		Tags:          splitTags(fields["Tags"]),
+		Tags:          tags,
 		SourceSession: fields["Source"],
-		Body:          buildBody(fields["Summary"], fields["Bullets"], full),
+		Body:          body,
 	}
 	if scope == memory.ScopePersonal {
 		// v1 never recorded an author (see unknownAuthor's doc comment
@@ -119,11 +175,37 @@ func parseBlock(block string) (memory.Memory, error) {
 		// rather than being silently refiled as team, which would leak it.
 		m.Author = unknownAuthor
 	}
-	if m.Body == "" {
-		return memory.Memory{}, fmt.Errorf("entry has no body")
-	}
 	m.ID = memory.ComputeID(m)
 	return m, nil
+}
+
+// prependTitleHeading puts the original, unslugged title back as the body's
+// first line, as a Markdown heading, unless it is already there (verbatim or
+// already formatted as a heading) so a Summary that happens to repeat the
+// title does not get doubled up.
+func prependTitleHeading(title, body string) string {
+	if title == "" {
+		return body
+	}
+	firstLine := body
+	if idx := strings.IndexByte(body, '\n'); idx >= 0 {
+		firstLine = body[:idx]
+	}
+	firstLine = strings.TrimSpace(firstLine)
+	if firstLine == title || firstLine == "# "+title {
+		return body
+	}
+	return "# " + title + "\n\n" + body
+}
+
+// containsFold reports whether s is present in list, ignoring case.
+func containsFold(list []string, s string) bool {
+	for _, item := range list {
+		if strings.EqualFold(item, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // cutField parses a "**Key:** value" line.

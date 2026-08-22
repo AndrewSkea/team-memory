@@ -255,6 +255,41 @@ func TestRunIsIdempotentWithUnparsedEntries(t *testing.T) {
 	}
 }
 
+// duplicateEntry appears verbatim in two different v1 documents below. Same
+// header, same fields, same body — so memory.ComputeID gives it the same id
+// both times, and it must land on disk as exactly one file.
+const duplicateEntry = "### Entry: 2026-01-01T00:00:00Z — Duplicated entry\n" +
+	"**Scope:** shared\n**Type:** decision\n**Tags:** x\n" +
+	"**Source:** session-dup\n**Summary:** same content twice.\n" +
+	"**Bullets:** - only one\n**Full:**\nIdentical body text.\n"
+
+// TestRunConvertedCountsDistinctMemoriesNotBlocks is fix #4 from the task-9
+// review: two byte-identical v1 blocks are the same memory by definition
+// (ComputeID hashes Body+Author+Created), so only one file lands on disk —
+// Result.Converted must report 1, not 2, or the number shown to a user
+// overstates what actually happened.
+func TestRunConvertedCountsDistinctMemoriesNotBlocks(t *testing.T) {
+	s, a, l := setup(t)
+	writeV1(t, l, "TOPIC-A.md", duplicateEntry)
+	writeV1(t, l, "TOPIC-B.md", duplicateEntry)
+
+	res, err := Run(s, a)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Converted != 1 {
+		t.Errorf("Converted = %d, want 1 — one file exists, so one memory converted", res.Converted)
+	}
+
+	ms, err := s.All()
+	if err != nil {
+		t.Fatalf("All: %v", err)
+	}
+	if len(ms) != 1 {
+		t.Errorf("store holds %d memories, want 1", len(ms))
+	}
+}
+
 func TestRunPreservesUnparsableEntries(t *testing.T) {
 	s, a, l := setup(t)
 	writeV1(t, l, "BROKEN.md",

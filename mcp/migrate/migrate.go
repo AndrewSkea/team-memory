@@ -52,10 +52,19 @@ func Run(s *store.Store, a *staging.Area) (Result, error) {
 				res.Pending++
 				continue
 			}
-			if _, err := s.Put(m, "team-memory: migrate "+m.ID+" from "+doc); err != nil {
+			hash, err := s.Put(m, "team-memory: migrate "+m.ID+" from "+doc)
+			if err != nil {
 				return res, err
 			}
-			res.Converted++
+			// store.Put/commitPath returns the zero hash when the commit was
+			// empty: content identical to m already exists at m's
+			// content-addressed path, so nothing new landed on disk. Two
+			// byte-identical v1 blocks (same body, author and timestamp,
+			// hence the same ComputeID) must not be reported as two
+			// converted memories when only one file exists.
+			if !hash.IsZero() {
+				res.Converted++
+			}
 		}
 
 		for _, u := range bad {
