@@ -24,6 +24,8 @@ type Result struct {
 //
 // UNSURE.md entries go to the review queue rather than being promoted, because
 // v1 could not decide where they belonged and neither should the migration.
+// An entry whose id is already in the bin is skipped: a rerun must not
+// resurrect something a human has already rejected.
 //
 // Run never drops an entry: every block it reads ends up converted, staged
 // for review, or preserved verbatim under memories/team/unparsed/.
@@ -46,6 +48,19 @@ func Run(s *store.Store, a *staging.Area) (Result, error) {
 		unsure := strings.EqualFold(filepath.Base(doc), "UNSURE.md")
 		for _, m := range parsed {
 			if unsure {
+				// An id already in the bin is one a human has looked at and
+				// rejected. Re-adding it would resurrect it into the review
+				// queue with the SAME id as the binned copy, and Restore on
+				// that id would then have clobbered the pending file and
+				// destroyed the rejection reason. Re-running a migration
+				// must not undo a review decision.
+				rejected, err := a.InBin(m.ID)
+				if err != nil {
+					return res, err
+				}
+				if rejected {
+					continue
+				}
 				if err := a.Add(m); err != nil {
 					return res, err
 				}

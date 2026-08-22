@@ -193,3 +193,65 @@ func TestFutureDatedClaimIsStale(t *testing.T) {
 		t.Fatalf("after a successful Take the item is claimed and must not be listed, got %d", len(pending))
 	}
 }
+
+// TestRestoreRefusesToClobberPending is the second half of the resurrection
+// fix. Restore renamed bin -> pending unconditionally and then deleted the
+// sidecar, so when both copies existed (as they did after a migrate rerun)
+// the bin ended up empty and the rejection reason was destroyed. A collision
+// must be an error, not a silent overwrite.
+func TestRestoreRefusesToClobberPending(t *testing.T) {
+	a, l := newArea(t)
+	id := "7777888899990000"
+	if err := a.Add(mem(id, "binned copy")); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := a.Reject(id, "no thanks"); err != nil {
+		t.Fatalf("Reject: %v", err)
+	}
+	// A second copy of the same id reappears in pending (what a migrate
+	// rerun used to do).
+	if err := a.Add(mem(id, "resurrected copy")); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	if err := a.Restore(id); err == nil {
+		t.Fatal("Restore must refuse when a pending file with that id already exists")
+	}
+
+	// Both the binned memory and its reason must survive the refusal.
+	binned, err := a.Binned()
+	if err != nil {
+		t.Fatalf("Binned: %v", err)
+	}
+	if len(binned) != 1 || binned[0].Reason != "no thanks" {
+		t.Fatalf("the rejection must be intact after a refused Restore, got %v", binned)
+	}
+	if _, err := os.Stat(filepath.Join(l.Bin, id+".json")); err != nil {
+		t.Errorf("the sidecar must survive a refused Restore; stat err = %v", err)
+	}
+}
+
+// TestInBinReportsRejections is the lookup migrate uses to avoid re-queueing
+// something a human already rejected.
+func TestInBinReportsRejections(t *testing.T) {
+	a, _ := newArea(t)
+	id := "8888999900001111"
+	if in, err := a.InBin(id); err != nil || in {
+		t.Fatalf("InBin on an empty bin = %v, %v; want false, nil", in, err)
+	}
+	if err := a.Add(mem(id, "body")); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if in, _ := a.InBin(id); in {
+		t.Error("a pending memory is not binned")
+	}
+	if err := a.Reject(id, "nope"); err != nil {
+		t.Fatalf("Reject: %v", err)
+	}
+	if in, err := a.InBin(id); err != nil || !in {
+		t.Fatalf("InBin after Reject = %v, %v; want true, nil", in, err)
+	}
+	if _, err := a.InBin("../../evil"); err == nil {
+		t.Error("InBin must validate its id like every other path-building call")
+	}
+}

@@ -311,3 +311,56 @@ func TestRunPreservesUnparsableEntries(t *testing.T) {
 		t.Errorf("unparsed dir holds %d files, want 1 — nothing may be dropped", len(entries))
 	}
 }
+
+// TestRerunDoesNotResurrectRejectedEntries is the regression proof: Run
+// re-Added every UNSURE.md entry on every run and never consulted the bin, so
+// migrate -> reject -> migrate put the SAME id in pending and in the bin at
+// once. A human's rejection was undone by re-running the migration.
+func TestRerunDoesNotResurrectRejectedEntries(t *testing.T) {
+	s, a, l := setup(t)
+	writeV1(t, l, "UNSURE.md", v1Doc)
+
+	if _, err := Run(s, a); err != nil {
+		t.Fatalf("first Run: %v", err)
+	}
+	pending, err := a.Pending()
+	if err != nil {
+		t.Fatalf("Pending: %v", err)
+	}
+	if len(pending) == 0 {
+		t.Fatal("expected the first run to queue UNSURE entries")
+	}
+	for _, m := range pending {
+		if err := a.Reject(m.ID, "not worth keeping"); err != nil {
+			t.Fatalf("Reject %s: %v", m.ID, err)
+		}
+	}
+
+	res, err := Run(s, a)
+	if err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	if res.Pending != 0 {
+		t.Errorf("second run reported %d newly queued entries, want 0", res.Pending)
+	}
+
+	pending, err = a.Pending()
+	if err != nil {
+		t.Fatalf("Pending: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("rejected entries came back into the queue: %d pending", len(pending))
+	}
+	binned, err := a.Binned()
+	if err != nil {
+		t.Fatalf("Binned: %v", err)
+	}
+	if len(binned) == 0 {
+		t.Fatal("the bin should still hold the rejections")
+	}
+	for _, b := range binned {
+		if b.Reason != "not worth keeping" {
+			t.Errorf("rejection reason for %s was lost: %q", b.Memory.ID, b.Reason)
+		}
+	}
+}

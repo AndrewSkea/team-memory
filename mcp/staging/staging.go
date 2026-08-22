@@ -341,10 +341,40 @@ func (a *Area) Reject(id, reason string) error {
 	return nil
 }
 
+// InBin reports whether an id has already been rejected. Callers that
+// re-derive the same content-addressed ids on every run (migrate) ask this
+// before queueing, so a human's rejection is not undone by re-running them.
+func (a *Area) InBin(id string) (bool, error) {
+	if err := validID(id); err != nil {
+		return false, err
+	}
+	_, err := os.Stat(a.binPath(id))
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("staging: stat bin %s: %w", id, err)
+}
+
 // Restore moves a binned memory back into pending.
+//
+// It refuses if a pending file with that id already exists rather than
+// renaming over it. os.Rename overwrites silently on POSIX, and the sidecar
+// removal below then destroyed the rejection reason for a memory that was
+// still queued - so a collision (two routes producing the same
+// content-addressed id, one binned and one pending) lost the record of why
+// it had been rejected. A collision is a state a human needs to resolve, not
+// one to paper over.
 func (a *Area) Restore(id string) error {
 	if err := validID(id); err != nil {
 		return err
+	}
+	if _, err := os.Stat(a.pendingPath(id)); err == nil {
+		return fmt.Errorf("staging: refusing to restore %s: a pending memory with that id already exists", id)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("staging: stat pending %s: %w", id, err)
 	}
 	if err := os.Rename(a.binPath(id), a.pendingPath(id)); err != nil {
 		return fmt.Errorf("staging: restore %s: %w", id, err)
