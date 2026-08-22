@@ -315,6 +315,19 @@ func TestCommitPathRefusesGitInternalPath(t *testing.T) {
 	}
 }
 
+// On a case-insensitive filesystem, ".GIT" is git metadata too.
+func TestCommitPathRefusesGitInternalPathCaseInsensitive(t *testing.T) {
+	l := newLayout(t)
+	s, err := Open(l)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	p := filepath.Join(l.Clone, ".GIT", "config")
+	if _, err := s.commitPath(p, "should never happen"); !errors.Is(err, ErrGitInternal) {
+		t.Fatalf("commitPath(.GIT/config) = %v, want ErrGitInternal", err)
+	}
+}
+
 // Put on a personal-scope memory still files inside the clone, under people/.
 func TestPutPersonalScopeStaysInsideClone(t *testing.T) {
 	l := newLayout(t)

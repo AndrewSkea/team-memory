@@ -111,6 +111,13 @@ var ErrLinkedComponent = errors.New("paths: path reaches the clone through a lin
 // The refusal fails closed in both return values: (false, ErrLinkedComponent).
 // A caller that checks only the bool still refuses the write, and a caller that
 // checks only the error still learns why.
+//
+// l.Clone itself is trusted layout input, not attacker-controlled: the walk in
+// assertPlainDescent starts at the clone root and never Lstats it. If the
+// clone root were itself a symlink or junction onto staging/, everything
+// beneath it would be admitted. The root is intentionally left unchecked
+// because Lstat-ing it would also refuse a legitimately symlinked home
+// directory, which is ordinary on macOS (e.g. /var, $TMPDIR).
 func (l Layout) IsInsideClone(abs string) (bool, error) {
 	clone, err := resolveExisting(l.Clone)
 	if err != nil {

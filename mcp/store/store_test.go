@@ -246,6 +246,10 @@ func TestSyncLocalAheadIsNotDivergence(t *testing.T) {
 		t.Fatalf("Worktree: %v", err)
 	}
 	writeFile(t, filepath.Join(l.Clone, "LOCAL.md"), "local\n")
+	// Deliberate test-fixture exemption from the one-funnel rule (only
+	// store.commitPath may call worktree.Add elsewhere): this bypasses the
+	// guard directly to set up a local-ahead-of-remote fixture, which is how
+	// that guard's behaviour gets exercised via Sync below.
 	if _, err := localWT.Add("LOCAL.md"); err != nil {
 		t.Fatalf("local Add: %v", err)
 	}
@@ -290,6 +294,10 @@ func TestSyncGenuineDivergenceReturnsErrNotFastForward(t *testing.T) {
 		t.Fatalf("Worktree: %v", err)
 	}
 	writeFile(t, filepath.Join(l.Clone, "LOCAL.md"), "local\n")
+	// Deliberate test-fixture exemption from the one-funnel rule (only
+	// store.commitPath may call worktree.Add elsewhere): this bypasses the
+	// guard directly to set up a genuinely-diverged local fixture, which is
+	// how that guard's behaviour gets exercised via Sync below.
 	if _, err := localWT.Add("LOCAL.md"); err != nil {
 		t.Fatalf("local Add: %v", err)
 	}

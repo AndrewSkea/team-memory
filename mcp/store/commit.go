@@ -107,7 +107,7 @@ func (s *Store) assertInsideClone(abs string) error {
 		return fmt.Errorf("%w: %s is the clone root, not a file within it", ErrOutsideClone, abs)
 	}
 	for _, seg := range strings.Split(slashed, "/") {
-		if seg == ".git" {
+		if strings.EqualFold(seg, ".git") {
 			return fmt.Errorf("%w: %s", ErrGitInternal, abs)
 		}
 	}
