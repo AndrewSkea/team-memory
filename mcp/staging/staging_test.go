@@ -108,7 +108,7 @@ func TestRestoreMovesBackToPending(t *testing.T) {
 	}
 }
 
-func TestTakeRemovesFromPending(t *testing.T) {
+func TestTakeThenDoneRemovesFromPending(t *testing.T) {
 	a, _ := newArea(t)
 	_ = a.Add(mem("eeeeeeeeeeeeeeee", "Approved."))
 
@@ -119,9 +119,18 @@ func TestTakeRemovesFromPending(t *testing.T) {
 	if m.Body != "Approved." {
 		t.Errorf("Body = %q, want %q", m.Body, "Approved.")
 	}
+	// Take claims but does not delete; the claim alone already hides the
+	// memory from review. Done is what actually removes it.
 	pending, _ := a.Pending()
 	if len(pending) != 0 {
-		t.Errorf("pending should be empty after Take, got %d", len(pending))
+		t.Errorf("a claimed memory should not be listed, got %d", len(pending))
+	}
+	if err := a.Done("eeeeeeeeeeeeeeee"); err != nil {
+		t.Fatalf("Done: %v", err)
+	}
+	pending, _ = a.Pending()
+	if len(pending) != 0 {
+		t.Errorf("pending should be empty after Done, got %d", len(pending))
 	}
 }
 
@@ -579,8 +588,15 @@ func TestTakeReclaimsStaleClaim(t *testing.T) {
 	if m.ID != id {
 		t.Fatalf("got memory id %q, want %q", m.ID, id)
 	}
-	if _, err := os.Stat(claim); !os.IsNotExist(err) {
-		t.Fatalf("expected the reclaimed claim marker to be gone after Take, stat err = %v", err)
+	// The reclaimed marker is now OURS: Take holds its claim until Done or
+	// Abort, so the marker must still be there, and must be fresh rather
+	// than still carrying the crashed caller's old timestamp.
+	info, err := os.Stat(claim)
+	if err != nil {
+		t.Fatalf("expected Take to hold the reclaimed claim marker, stat err = %v", err)
+	}
+	if claimIsStale(info.ModTime()) {
+		t.Fatalf("reclaimed marker still looks stale; another caller could steal the claim")
 	}
 }
 

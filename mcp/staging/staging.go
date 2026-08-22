@@ -2,6 +2,21 @@
 //
 // Everything here lives under the layout's Staging directory, which is a
 // sibling of the git clone. Nothing in this package ever touches the clone.
+//
+// Approval is a two-step handshake, because this package is not the commit
+// point - the store is. Take(id) CLAIMS a pending memory and returns it,
+// leaving the file on disk; the caller commits it and then calls Done(id) to
+// delete it, or Abort(id) to release the claim and leave it queued for a
+// retry. Take must not delete, or a memory the store refuses (an unusable
+// author, a disk error, a git error) would be destroyed with no compensating
+// re-add anywhere.
+//
+// The claim is a zero-byte "<id>.md.taking" file beside the memory. If you
+// are a human looking at one in a text editor: it means somebody is
+// mid-approval of that memory, and Pending() therefore hides the memory
+// while it exists. A marker whose mtime is more than staleClaimAge away from
+// now belongs to no live caller and is ignored and
+// reclaimed, so deleting one by hand is safe but rarely necessary.
 package staging
 
 import (
@@ -109,9 +124,21 @@ func (a *Area) Add(m memory.Memory) error {
 // Created, with ID as a final tiebreak so the listing is a total order and
 // therefore deterministic even when two memories share both keys.
 func (a *Area) Pending() ([]memory.Memory, error) {
-	ms, err := readDirMemories(a.layout.Pending)
+	all, err := readDirMemories(a.layout.Pending)
 	if err != nil {
 		return nil, err
+	}
+	// An item with a live claim is mid-approval, not awaiting review: showing
+	// it would invite a second reviewer to act on a memory another caller is
+	// already committing. A STALE claim is a crashed caller's leftover and
+	// must not hide the memory, or a crash mid-approval would drop it out of
+	// the queue for good.
+	ms := make([]memory.Memory, 0, len(all))
+	for _, m := range all {
+		if a.claimHeld(m.ID) {
+			continue
+		}
+		ms = append(ms, m)
 	}
 	sort.Slice(ms, func(i, j int) bool {
 		if ms[i].SourceSession != ms[j].SourceSession {
@@ -135,8 +162,13 @@ func (a *Area) Pending() ([]memory.Memory, error) {
 // mistaken for stale and reclaimed out from under it.
 const staleClaimAge = time.Minute
 
-// Take atomically claims a pending memory, reads it, and removes it. Used
-// when a memory is approved and about to be committed.
+// Take atomically claims a pending memory and returns it. It does NOT
+// remove anything: the caller commits the memory and then calls Done to
+// delete it, or Abort to release the claim and leave it queued. See the
+// package doc for why the delete cannot live here.
+//
+// While the claim is held the memory is hidden from Pending, so a
+// half-finished approval is not offered up for review a second time.
 //
 // The claim is an exclusive file create (O_CREATE|O_EXCL) of a fixed
 // ".taking" marker in the same directory, not a rename. Both primitives are
@@ -164,12 +196,22 @@ func (a *Area) Take(id string) (memory.Memory, error) {
 		return memory.Memory{}, fmt.Errorf("staging: claim pending %s: %w", id, err)
 	}
 	lock.Close()
-	// The marker's only job is exclusion; once we hold it (or fail to), we
-	// no longer need it on disk. Best-effort: a leftover marker after a
-	// crash mid-Take is recovered by the next Take's claimPending call
-	// (see staleClaimAge), not by this defer.
-	defer os.Remove(claim)
 
+	m, err := a.readPending(id, p)
+	if err != nil {
+		// We failed before handing anything back, so nothing downstream can
+		// call Done or Abort for us: release our own claim, or an unreadable
+		// pending file (which a human may well be about to fix in place)
+		// stays wedged until the marker goes stale.
+		_ = os.Remove(claim)
+		return memory.Memory{}, err
+	}
+	return m, nil
+}
+
+// readPending reads and parses one pending file, keying the memory's ID off
+// the filename rather than the frontmatter.
+func (a *Area) readPending(id, p string) (memory.Memory, error) {
 	data, err := os.ReadFile(p)
 	if err != nil {
 		return memory.Memory{}, fmt.Errorf("staging: read pending %s: %w", id, err)
@@ -184,24 +226,60 @@ func (a *Area) Take(id string) (memory.Memory, error) {
 	// same overwrite for the same reason; Take is the reader whose output
 	// reaches the clone, so it must not be the one that skips it.
 	m.ID = id
-	if err := os.Remove(p); err != nil {
-		return memory.Memory{}, fmt.Errorf("staging: remove pending %s: %w", id, err)
-	}
 	return m, nil
 }
 
-// claimPending opens the exclusive claim marker for a pending Take. If the
-// marker already exists, it is either held by a live concurrent Take (in
-// which case this call must lose) or left over from a Take whose process
-// crashed before it could remove its own marker (in which case this call
-// must be able to recover, or the memory becomes permanently un-takeable).
-//
-// The two are told apart by the marker's age: a live Take's marker is never
-// older than staleClaimAge, because Take itself completes in milliseconds.
-// If the existing marker is older than that, it is reclaimed and the claim
-// is retried exactly once — not looped, so that if the retry also loses,
-// the loser correctly concludes a live competitor claimed it in between and
-// returns the ordinary "already claimed" error rather than fighting forever.
+// Done completes a Take: it removes the pending memory and releases the
+// claim. Call it only once the store has actually committed the memory -
+// this is the point of no return, and it is deliberately not inside Take.
+func (a *Area) Done(id string) error {
+	if err := validID(id); err != nil {
+		return err
+	}
+	if err := os.Remove(a.pendingPath(id)); err != nil && !os.IsNotExist(err) {
+		// Leave the claim in place: the memory is still there, and a
+		// still-claimed item is safer than one that reappears in the review
+		// queue while a caller believes it is committed.
+		return fmt.Errorf("staging: remove pending %s: %w", id, err)
+	}
+	if err := os.Remove(a.pendingPath(id) + ".taking"); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("staging: release claim %s: %w", id, err)
+	}
+	return nil
+}
+
+// Abort releases a claim without removing anything: the memory goes back
+// into the review queue for a later retry. Call it when the commit failed.
+func (a *Area) Abort(id string) error {
+	if err := validID(id); err != nil {
+		return err
+	}
+	if err := os.Remove(a.pendingPath(id) + ".taking"); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("staging: release claim %s: %w", id, err)
+	}
+	return nil
+}
+
+// claimIsStale reports whether a claim marker with this mtime cannot belong
+// to a live caller: a marker this old is the crashed-process case, left
+// behind by a Take that never reached Done or Abort.
+func claimIsStale(mod time.Time) bool {
+	age := time.Since(mod)
+	return age >= staleClaimAge
+}
+
+// claimHeld reports whether a live (non-stale) claim marker exists for a
+// pending id. A missing or unreadable marker is reported as not held: the
+// claim is an advisory hint for the review queue, and failing closed here
+// would hide a memory from review rather than protect anything.
+func (a *Area) claimHeld(id string) bool {
+	info, err := os.Stat(a.pendingPath(id) + ".taking")
+	if err != nil {
+		return false
+	}
+	return !claimIsStale(info.ModTime())
+}
+
 func (a *Area) claimPending(claim string) (*os.File, error) {
 	lock, err := os.OpenFile(claim, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err == nil {
@@ -219,7 +297,7 @@ func (a *Area) claimPending(claim string) (*os.File, error) {
 		// retry once and return whatever that attempt reports.
 		return os.OpenFile(claim, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	}
-	if time.Since(info.ModTime()) < staleClaimAge {
+	if !claimIsStale(info.ModTime()) {
 		return nil, err
 	}
 

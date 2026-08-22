@@ -111,3 +111,67 @@ func assertNothingOutsideMemories(t *testing.T, clone string) {
 		}
 	}
 }
+
+// unusablePending is a well-formed pending file the store will refuse: a
+// personal-scope memory with no author has no path to be filed at.
+const unusablePending = `---
+id: cccc3333dddd4444
+created: 2026-01-02T03:04:05Z
+scope: personal
+slug: nowhere
+---
+
+Body the store cannot file.
+`
+
+// TestPutRefusalDoesNotDestroyThePendingMemory is the regression proof for
+// the old destructive Take: it deleted the pending file and returned, and
+// the caller then discovered store.Put would not accept the memory. There
+// was no compensating re-add anywhere, so the memory ended up in neither
+// pending, the store, nor the bin - simply gone.
+func TestPutRefusalDoesNotDestroyThePendingMemory(t *testing.T) {
+	home := t.TempDir()
+	l, err := paths.New(home)
+	if err != nil {
+		t.Fatalf("paths.New: %v", err)
+	}
+	a, err := New(l)
+	if err != nil {
+		t.Fatalf("staging.New: %v", err)
+	}
+	s, err := store.Open(l)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+
+	const id = "cccc3333dddd4444"
+	if err := os.WriteFile(filepath.Join(l.Pending, id+".md"), []byte(unusablePending), 0o600); err != nil {
+		t.Fatalf("plant pending: %v", err)
+	}
+
+	m, err := a.Take(id)
+	if err != nil {
+		t.Fatalf("Take: %v", err)
+	}
+	if _, err := s.Put(m, "approve "+id); err == nil {
+		t.Fatal("expected store.Put to refuse a personal memory with no author")
+	}
+	if err := a.Abort(id); err != nil {
+		t.Fatalf("Abort: %v", err)
+	}
+
+	pending, err := a.Pending()
+	if err != nil {
+		t.Fatalf("Pending: %v", err)
+	}
+	if len(pending) != 1 || pending[0].ID != id {
+		t.Fatalf("the refused memory must still be queued for review, got %v", pending)
+	}
+	binned, err := a.Binned()
+	if err != nil {
+		t.Fatalf("Binned: %v", err)
+	}
+	if len(binned) != 0 {
+		t.Fatalf("nothing should have been binned, got %d", len(binned))
+	}
+}
