@@ -29,6 +29,15 @@ frontend/           Vanilla JS + CSS web UI (embedded into binary via go:embed)
   src/services/     GitHub client, cache, LLM backends, index parser
 prompts/            Source-of-truth prompt text files
 scripts/            copy-prompts.sh (prompts/ → frontend/prompts/ + mcp/prompts/)
+                    and frontend/ → mcp/frontend/ (the go:embed source)
+```
+
+> **Do not edit `mcp/frontend/` by hand — it is generated.** `make build` runs
+> `scripts/copy-prompts.sh`, which deletes `mcp/frontend/` and recopies it from
+> `frontend/`. Edit `frontend/` (the single source of truth); `mcp/frontend/`
+> is gitignored and rebuilt on every `make build` / release.
+
+```
 install.sh          Bash installer (macOS/Linux)
 install.ps1         PowerShell installer (Windows)
 ```

@@ -8,6 +8,7 @@
 
 Locally run in your CLI or UI, backed up to your git knowledge repo automatically
 
+[![CI](https://github.com/AndrewSkea/team-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/AndrewSkea/team-memory/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
