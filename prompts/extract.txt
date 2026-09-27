@@ -27,7 +27,7 @@ For each memory:
 - "title": specific, ≤ 80 chars, states the knowledge itself (e.g. "Payments API rate-limits at 100 rps per key"), not the activity
 - "summary": one sentence a teammate can act on
 - "body": 1-6 short lines of supporting detail (why, how, exact commands/config names). Markdown allowed. No secrets.
-- "about": the systems/services/libraries/teams it concerns. Reuse canonical names from "entities" whenever they match (including via aliases). Use kebab-case for new names (e.g. "payments-api"). Prefer the system the knowledge is ABOUT over the repo it was learned in: knowledge learned in "billing-service" about the payments API is about "payments-api".
+- "about": the systems/services/libraries/teams it concerns — both the specific one (e.g. "payments-events" topic, "payments-api") and the underlying technology when relevant (e.g. "kafka", "postgres", "stripe"), so people using either find it. Reuse canonical names from "entities" whenever they match (including via aliases). Use kebab-case for new names. Prefer the system the knowledge is ABOUT over the repo it was learned in: knowledge learned in "billing-service" about the payments API is about "payments-api", not "billing-service".
 - "tags": 1-5 lowercase keywords
 - "type": one of decision, gotcha, howto, fact, convention, incident
 - "sensitivity": "shareable" (fine for the whole team), "personal" (about the user's own life/private projects/preferences), or "sensitive" (security details, customer data, anything confidential beyond the team)

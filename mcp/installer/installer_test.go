@@ -154,7 +154,16 @@ func TestServiceDefinitions(t *testing.T) {
 	if !strings.Contains(unit, `ExecStart="/home/a/bin/team-memory-mcp" serve --port 7438`) || !strings.Contains(unit, "Environment=PATH=/a:/b") {
 		t.Errorf("unit:\n%s", unit)
 	}
-	if sp := ServicePATH("/opt/tm/team-memory-mcp"); !strings.HasPrefix(sp, "/opt/tm") {
+	bin := filepath.Join(t.TempDir(), "team-memory-mcp")
+	if sp := ServicePATH(bin); !strings.HasPrefix(sp, filepath.Dir(bin)+string(os.PathListSeparator)) {
 		t.Errorf("service path %s", sp)
+	}
+}
+
+func TestDefaultPathsHonourClaudeConfigDir(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/cc")
+	p := DefaultPaths("/bin/x")
+	if p.Settings != filepath.Join("/tmp/cc", "settings.json") || p.ClaudeJSON != filepath.Join("/tmp/cc", ".claude.json") || p.Commands != filepath.Join("/tmp/cc", "commands") {
+		t.Fatalf("%+v", p)
 	}
 }

@@ -47,13 +47,17 @@ type Paths struct {
 func DefaultPaths(bin string) Paths {
 	home, _ := os.UserHomeDir()
 	claudeDir := filepath.Join(home, ".claude")
+	claudeJSON := filepath.Join(home, ".claude.json")
+	// With CLAUDE_CONFIG_DIR set, Claude Code keeps everything — including
+	// .claude.json — inside that directory.
 	if v := os.Getenv("CLAUDE_CONFIG_DIR"); v != "" {
 		claudeDir = v
+		claudeJSON = filepath.Join(v, ".claude.json")
 	}
 	return Paths{
 		Home:       home,
 		Bin:        bin,
-		ClaudeJSON: filepath.Join(home, ".claude.json"),
+		ClaudeJSON: claudeJSON,
 		Settings:   filepath.Join(claudeDir, "settings.json"),
 		Commands:   filepath.Join(claudeDir, "commands"),
 	}

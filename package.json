@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/frontend",
+    "test": "node --test \"tests/frontend/*.test.js\"",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:all": "npm test && npm run test:e2e",

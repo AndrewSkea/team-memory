@@ -81,6 +81,7 @@ case ":$PATH:" in
       *)    RC="$HOME/.profile" ;;
     esac
     if [ -n "$RC" ] && ! grep -qsF "$BIN_DIR" "$RC"; then
+      # shellcheck disable=SC2016 # $PATH is meant to be written literally
       printf '\n# added by team-memory installer\nexport PATH="%s:$PATH"\n' "$BIN_DIR" >> "$RC"
       echo "Added $BIN_DIR to PATH in $RC (open a new terminal to use it)"
     fi

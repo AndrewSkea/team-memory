@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/AndrewSkea/team-memory/mcp/app"
 	"github.com/AndrewSkea/team-memory/mcp/hook"
 	"github.com/AndrewSkea/team-memory/mcp/mcpserver"
@@ -253,7 +255,11 @@ func cmdSearch(ctx context.Context, args []string) int {
 }
 
 func printMemory(a *app.App, m memory.Memory) {
-	fmt.Printf("\033[1m%s\033[0m  [%s]\n", m.Title, m.ID)
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		fmt.Printf("\033[1m%s\033[0m  [%s]\n", m.Title, m.ID)
+	} else {
+		fmt.Printf("%s  [%s]\n", m.Title, m.ID)
+	}
 	var meta []string
 	if m.Type != "" {
 		meta = append(meta, m.Type)

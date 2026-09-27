@@ -117,11 +117,15 @@ func TestToolsEndToEnd(t *testing.T) {
 		call(4, "get_memory", map[string]any{"id": id}),
 		call(5, "lookup", map[string]any{"query": "payments"}),
 		call(6, "recall", map[string]any{"query": "zebras"}),
-		call(7, "capture_mode", map[string]any{}),
-		call(8, "capture_mode", map[string]any{"mode": "review"}),
-		call(9, "capture_mode", map[string]any{"mode": "yolo"}),
 		call(10, "list_pending", map[string]any{}),
 	)
+	// capture_mode calls depend on each other; tools/call runs concurrently.
+	for k, v := range run(t, s, call(7, "capture_mode", map[string]any{})) {
+		got[k] = v
+	}
+	for k, v := range run(t, s, call(8, "capture_mode", map[string]any{"mode": "review"}), call(9, "capture_mode", map[string]any{"mode": "yolo"})) {
+		got[k] = v
+	}
 	if !strings.Contains(text(got["3"]), id) || !strings.Contains(text(got["5"]), id) {
 		t.Fatalf("recall: %s", text(got["3"]))
 	}
