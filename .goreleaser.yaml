@@ -7,7 +7,10 @@ before:
 builds:
   - id: team-memory-mcp
     dir: mcp
+    main: .
     binary: team-memory-mcp
+    flags:
+      - -trimpath
     env:
       - CGO_ENABLED=0
     goos:

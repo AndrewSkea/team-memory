@@ -10,7 +10,6 @@
     "copy-prompts": "bash scripts/copy-prompts.sh"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
-    "fake-indexeddb": "^6.0.0"
+    "@playwright/test": "^1.63.0"
   }
 }

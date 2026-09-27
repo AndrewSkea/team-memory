@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { formatDecision } from '../../frontend/src/pages/decisions.js';
+import { formatDecision } from '../../frontend/src/lib/formats.js';
 
 describe('formatDecision', () => {
   it('formats decision with all fields', () => {

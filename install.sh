@@ -1,402 +1,95 @@
 #!/bin/sh
+# team-memory installer for macOS and Linux.
+#
+#   curl -LsSf https://raw.githubusercontent.com/AndrewSkea/team-memory/master/install.sh | sh
+#
+# Extra arguments are passed to `team-memory-mcp install`, e.g.
+#   curl -LsSf …/install.sh | sh -s -- --repo acme/team-memory --use-gh
+#
+# Environment: TEAM_MEMORY_VERSION (e.g. v1.0.0, default latest),
+#              TEAM_MEMORY_BIN_DIR (default ~/bin),
+#              TEAM_MEMORY_DOWNLOAD_BASE (mirror URL containing the release assets)
 set -eu
 
-REPO_OWNER="AndrewSkea"
-REPO_NAME="team-memory"
+REPO="AndrewSkea/team-memory"
 BINARY="team-memory-mcp"
-BIN_DIR="$HOME/bin"
+BIN_DIR="${TEAM_MEMORY_BIN_DIR:-$HOME/bin}"
+VERSION="${TEAM_MEMORY_VERSION:-latest}"
 
-# ── detect OS + arch ────────────────────────────────────────────────────────
+err() { echo "error: $*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || err "'$1' is required"; }
+need curl
+need tar
+need uname
+
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 case "$ARCH" in
-  x86_64)        ARCH="amd64" ;;
+  x86_64|amd64)  ARCH="amd64" ;;
   aarch64|arm64) ARCH="arm64" ;;
-  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+  *) err "unsupported architecture: $ARCH" ;;
 esac
 case "$OS" in
   linux|darwin) ;;
-  *) echo "Unsupported OS: $OS — use install.ps1 on Windows."; exit 1 ;;
+  *) err "unsupported OS: $OS — on Windows use install.ps1" ;;
 esac
 
-# ── fetch latest release tag ─────────────────────────────────────────────────
-echo "Fetching latest release..."
-TAG=$(curl -fsSL "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest" \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
-echo "Installing $BINARY $TAG ($OS/$ARCH)"
-
-# ── download archive + checksums ─────────────────────────────────────────────
 ARCHIVE="${BINARY}_${OS}_${ARCH}.tar.gz"
-BASE="https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/$TAG"
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
-
-curl -fsSL "$BASE/$ARCHIVE"       -o "$TMP/$ARCHIVE"
-curl -fsSL "$BASE/checksums.txt"  -o "$TMP/checksums.txt"
-
-# ── verify SHA256 ────────────────────────────────────────────────────────────
-EXPECTED=$(grep "$ARCHIVE" "$TMP/checksums.txt" | awk '{print $1}')
-if [ -z "$EXPECTED" ]; then
-  echo "Error: $ARCHIVE not found in checksums.txt"; exit 1
+if [ -n "${TEAM_MEMORY_DOWNLOAD_BASE:-}" ]; then
+  BASE="$TEAM_MEMORY_DOWNLOAD_BASE"   # mirrors / testing
+elif [ "$VERSION" = "latest" ]; then
+  BASE="https://github.com/$REPO/releases/latest/download"
+else
+  BASE="https://github.com/$REPO/releases/download/$VERSION"
 fi
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT INT TERM
+
+echo "Downloading $BINARY ($VERSION, $OS/$ARCH)…"
+curl -fsSL "$BASE/$ARCHIVE" -o "$TMP/$ARCHIVE" || err "download failed: $BASE/$ARCHIVE"
+curl -fsSL "$BASE/checksums.txt" -o "$TMP/checksums.txt" || err "download failed: $BASE/checksums.txt"
+
+# ── verify SHA-256 ───────────────────────────────────────────────────────────
+EXPECTED=$(awk -v f="$ARCHIVE" '$2 == f { print $1 }' "$TMP/checksums.txt")
+[ -n "$EXPECTED" ] || err "$ARCHIVE not listed in checksums.txt"
 if command -v sha256sum >/dev/null 2>&1; then
   ACTUAL=$(sha256sum "$TMP/$ARCHIVE" | awk '{print $1}')
 else
   ACTUAL=$(shasum -a 256 "$TMP/$ARCHIVE" | awk '{print $1}')
 fi
-if [ "$EXPECTED" != "$ACTUAL" ]; then
-  echo "Checksum mismatch!"; echo "  expected: $EXPECTED"; echo "  got:      $ACTUAL"; exit 1
-fi
+[ "$EXPECTED" = "$ACTUAL" ] || err "checksum mismatch (expected $EXPECTED, got $ACTUAL)"
 
 # ── install binary ───────────────────────────────────────────────────────────
 mkdir -p "$BIN_DIR"
-tar -xzf "$TMP/$ARCHIVE" -C "$TMP"
-# Replace atomically (new inode): on macOS, overwriting a signed binary in place
-# makes the kernel kill later launches with "Code Signature Invalid".
+tar -xzf "$TMP/$ARCHIVE" -C "$TMP" "$BINARY"
+# Replace atomically (new inode): on macOS, overwriting a signed binary in
+# place makes the kernel kill later launches with "Code Signature Invalid".
 cp "$TMP/$BINARY" "$BIN_DIR/.$BINARY.new"
-chmod +x "$BIN_DIR/.$BINARY.new"
+chmod 755 "$BIN_DIR/.$BINARY.new"
 mv -f "$BIN_DIR/.$BINARY.new" "$BIN_DIR/$BINARY"
-echo "Installed to $BIN_DIR/$BINARY"
+echo "Installed $BIN_DIR/$BINARY ($("$BIN_DIR/$BINARY" version))"
 
-# ── add ~/bin to PATH ────────────────────────────────────────────────────────
-PATH_LINE='export PATH="$HOME/bin:$PATH"'
-add_to_path() {
-  RC="$1"
-  if [ -f "$RC" ] && grep -qF 'HOME/bin' "$RC" 2>/dev/null; then
-    return
-  fi
-  if [ -f "$RC" ]; then
-    printf '\n# added by team-memory installer\n%s\n' "$PATH_LINE" >> "$RC"
-    echo "Added ~/bin to PATH in $RC"
-  fi
-}
-SHELL_NAME=$(basename "${SHELL:-sh}")
-case "$SHELL_NAME" in
-  zsh)  add_to_path "$HOME/.zshrc" ;;
-  bash) add_to_path "$HOME/.bashrc" ;;
-  *)    add_to_path "$HOME/.profile" ;;
+# ── put BIN_DIR on PATH for future shells ────────────────────────────────────
+case ":$PATH:" in
+  *":$BIN_DIR:"*) ;;
+  *)
+    case "$(basename "${SHELL:-sh}")" in
+      zsh)  RC="$HOME/.zshrc" ;;
+      bash) if [ "$OS" = "darwin" ]; then RC="$HOME/.bash_profile"; else RC="$HOME/.bashrc"; fi ;;
+      fish) RC="" ; echo "Add $BIN_DIR to your PATH: fish_add_path $BIN_DIR" ;;
+      *)    RC="$HOME/.profile" ;;
+    esac
+    if [ -n "$RC" ] && ! grep -qsF "$BIN_DIR" "$RC"; then
+      printf '\n# added by team-memory installer\nexport PATH="%s:$PATH"\n' "$BIN_DIR" >> "$RC"
+      echo "Added $BIN_DIR to PATH in $RC (open a new terminal to use it)"
+    fi
+    ;;
 esac
 
-# ── read existing config (if any) ────────────────────────────────────────────
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/team-memory"
-CONFIG_FILE="$CONFIG_DIR/config.json"
-
-EXISTING_PAT=""
-EXISTING_SLUG=""
-if [ -f "$CONFIG_FILE" ]; then
-  EXISTING_PAT=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('token',''))" "$CONFIG_FILE" 2>/dev/null || true)
-  EXISTING_OWNER=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('owner',''))" "$CONFIG_FILE" 2>/dev/null || true)
-  EXISTING_REPO=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('repo',''))" "$CONFIG_FILE" 2>/dev/null || true)
-  if [ -n "$EXISTING_OWNER" ] && [ -n "$EXISTING_REPO" ]; then
-    EXISTING_SLUG="$EXISTING_OWNER/$EXISTING_REPO"
-  fi
-fi
-
-# ── prompt for config ─────────────────────────────────────────────────────────
-echo ""
-if [ -n "$EXISTING_PAT" ]; then
-  printf "GitHub PAT [keep existing]: " >/dev/tty
-else
-  printf "GitHub PAT (fine-grained, contents:write on your memory repo): " >/dev/tty
-fi
-stty -echo </dev/tty 2>/dev/null || true
-read -r PAT </dev/tty || PAT=""
-stty echo </dev/tty 2>/dev/null || true
-echo "" >/dev/tty
-[ -z "$PAT" ] && PAT="$EXISTING_PAT"
-
-if [ -n "$EXISTING_SLUG" ]; then
-  printf "Repo (owner/name) [${EXISTING_SLUG}]: " >/dev/tty
-else
-  printf "Repo (owner/name, e.g. alice/my-memory): " >/dev/tty
-fi
-read -r SLUG </dev/tty || SLUG=""
-[ -z "$SLUG" ] && SLUG="$EXISTING_SLUG"
-
-# ── write config ─────────────────────────────────────────────────────────────
-if [ -n "$PAT" ] && [ -n "$SLUG" ]; then
-  OWNER=$(printf '%s' "$SLUG" | cut -d/ -f1)
-  REPO=$(printf '%s' "$SLUG" | cut -d/ -f2)
-  mkdir -p "$CONFIG_DIR"
-  # JSON-encode each field so quotes/backslashes in PAT/owner/repo can't
-  # corrupt the file. (GitHub PATs don't contain these today but inputs
-  # come from a TTY — defence in depth.)
-  PAT="$PAT" OWNER="$OWNER" REPO="$REPO" python3 - "$CONFIG_FILE" <<'PYEOF'
-import json, os, sys
-out = {
-    "token": os.environ["PAT"],
-    "owner": os.environ["OWNER"],
-    "repo":  os.environ["REPO"],
-    "check_first": False,
-}
-with open(sys.argv[1], "w") as f:
-    json.dump(out, f, indent=2)
-PYEOF
-  chmod 600 "$CONFIG_FILE"
-  echo "Config written to $CONFIG_FILE"
-else
-  echo "Warning: PAT or repo blank — skipping config."
-  echo "  Run install.sh again, or write $CONFIG_FILE manually."
-fi
-
-# ── choose run mode ───────────────────────────────────────────────────────────
-echo ""
-echo "How should team-memory-mcp run?"
-echo "  1) System service  — always available; open http://team-mem/ in browser"
-echo "  2) With Claude Code — auto-starts when Claude Code runs (lighter weight)"
-printf "Choice [1/2, default 2]: " >/dev/tty
-read -r RUN_CHOICE </dev/tty || RUN_CHOICE=""
-[ -z "$RUN_CHOICE" ] && RUN_CHOICE="2"
-
-# ── wire Claude Code hooks (both modes need hooks for session-end/precompact) ─
-SETTINGS="$HOME/.claude/settings.json"
-mkdir -p "$(dirname "$SETTINGS")"
-[ -f "$SETTINGS" ] || printf '{}' > "$SETTINGS"
-
-python3 - "$SETTINGS" "$BIN_DIR/$BINARY" <<'PYEOF'
-import sys, json, shlex
-
-path, binary = sys.argv[1], shlex.quote(sys.argv[2])
-with open(path) as f:
-    settings = json.load(f)
-
-settings.setdefault('hooks', {})
-
-# Older installs hooked `Stop`, which fires after every assistant turn rather
-# than once per session. Remove those entries; SessionEnd replaces them.
-stop = settings['hooks'].get('Stop', [])
-kept = [e for e in stop if not any('team-memory-mcp' in h.get('command', '') for h in e.get('hooks', []))]
-if len(kept) != len(stop):
-    if kept:
-        settings['hooks']['Stop'] = kept
-    else:
-        settings['hooks'].pop('Stop')
-    print('  Removed legacy Stop hook (replaced by SessionEnd)')
-
-# Absolute path: hooks must not depend on ~/bin being on Claude Code's PATH.
-new_hooks = {
-    'SessionEnd': [{'matcher': '', 'hooks': [{'type': 'command', 'command': binary + ' --once session-end', 'timeout': 120}]}],
-    'PreCompact': [{'matcher': '', 'hooks': [{'type': 'command', 'command': binary + ' --once precompact',  'timeout': 120}]}],
-}
-for event, entries in new_hooks.items():
-    existing = settings['hooks'].get(event, [])
-    already = any(
-        h.get('command', '').find('team-memory-mcp') >= 0
-        for e in existing for h in e.get('hooks', [])
-    )
-    if not already:
-        settings['hooks'][event] = existing + entries
-        print(f'  Hooked {event}')
-    else:
-        print(f'  {event} already wired')
-
-with open(path, 'w') as f:
-    json.dump(settings, f, indent=2)
-PYEOF
-
-# ── register MCP server in ~/.claude.json ────────────────────────────────────
-CLAUDE_JSON="$HOME/.claude.json"
-[ -f "$CLAUDE_JSON" ] || printf '{}' > "$CLAUDE_JSON"
-
-# In service mode the server is always running; disable auto-start from Claude Code.
-# In claude-code mode, Claude Code auto-starts the process via the 'command' field.
-if [ "$RUN_CHOICE" = "1" ]; then
-  MCP_COMMAND="$BIN_DIR/$BINARY"
-  MCP_ARGS='["--mcp", "--port", "7439"]'   # use 7439 so it doesn't conflict with service on 7438
-  SERVICE_MODE=true
-else
-  MCP_COMMAND="$BIN_DIR/$BINARY"
-  MCP_ARGS='["--mcp"]'
-  SERVICE_MODE=false
-fi
-
-python3 - "$CLAUDE_JSON" "$MCP_COMMAND" "$MCP_ARGS" <<'PYEOF'
-import sys, json
-
-path, command, args_str = sys.argv[1], sys.argv[2], sys.argv[3]
-args = json.loads(args_str)
-with open(path) as f:
-    data = json.load(f)
-
-data.setdefault('mcpServers', {})
-if 'team-memory' not in data['mcpServers']:
-    data['mcpServers']['team-memory'] = {'command': command, 'args': args}
-    print('  MCP server registered')
-else:
-    # Update command/args in case the install path or port changed
-    data['mcpServers']['team-memory']['command'] = command
-    data['mcpServers']['team-memory']['args'] = args
-    print('  MCP server updated')
-
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2)
-PYEOF
-
-# ── install Claude Code slash commands ───────────────────────────────────────
-COMMANDS_DIR="$HOME/.claude/commands"
-mkdir -p "$COMMANDS_DIR"
-
-cat > "$COMMANDS_DIR/memory-search.md" <<'CMDEOF'
-Search team memory for: $ARGUMENTS
-
-Use the `lookup` MCP tool with "$ARGUMENTS" as the query. Present the results clearly, grouped by source file. If no results are found, say so briefly.
-CMDEOF
-
-cat > "$COMMANDS_DIR/memory-add.md" <<'CMDEOF'
-Save the following note to team memory: $ARGUMENTS
-
-Use the Bash tool to run this command — Python handles JSON encoding so quotes and special characters work correctly:
-
-```bash
-python3 - "$ARGUMENTS" << 'PYEOF'
-import json, sys, urllib.request
-note = sys.argv[1]
-body = json.dumps({"text": note, "title": ""}).encode("utf-8")
-req = urllib.request.Request(
-    "http://127.0.0.1:7438/v1/quick-add",
-    body,
-    {"Content-Type": "application/json"}
-)
-with urllib.request.urlopen(req) as resp:
-    print(resp.read().decode("utf-8"))
-PYEOF
-```
-
-Parse the response JSON and report the `file` field (e.g. "Saved to DECISIONS.md"). If connection is refused, the server is not running — start it with `team-memory-mcp`.
-CMDEOF
-
-echo "  Commands: $COMMANDS_DIR  (memory-search, memory-add)"
-
-# ── service setup ─────────────────────────────────────────────────────────────
-PORT=7438
-
-# launchd/systemd start services with a minimal PATH (/usr/bin:/bin:…), so the
-# `claude` CLI used for categorisation would be missing. Bake in its directory.
-SERVICE_PATH="$BIN_DIR:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-CLAUDE_BIN=$(command -v claude 2>/dev/null || true)
-if [ -n "$CLAUDE_BIN" ]; then
-  SERVICE_PATH="$(dirname "$CLAUDE_BIN"):$SERVICE_PATH"
-elif [ "$RUN_CHOICE" = "1" ]; then
-  echo "  Warning: 'claude' CLI not found on PATH — AI categorisation will be unavailable"
-  echo "  until it is installed and this installer is re-run."
-fi
-
-if [ "$RUN_CHOICE" = "1" ]; then
-  # ── add hosts entry ──────────────────────────────────────────────────────
-  if ! grep -qF 'team-mem' /etc/hosts 2>/dev/null; then
-    if echo "127.0.0.1 team-mem" | sudo tee -a /etc/hosts >/dev/null 2>&1; then
-      echo "  Added team-mem to /etc/hosts"
-    else
-      echo "  Could not write /etc/hosts (no sudo) — add manually:"
-      echo "    echo '127.0.0.1 team-mem' | sudo tee -a /etc/hosts"
-    fi
-  else
-    echo "  team-mem already in /etc/hosts"
-  fi
-
-  # ── try to grant port 80 binding (Linux only) ─────────────────────────────
-  if [ "$OS" = "linux" ] && command -v setcap >/dev/null 2>&1; then
-    if sudo setcap 'cap_net_bind_service=+ep' "$BIN_DIR/$BINARY" 2>/dev/null; then
-      PORT=80
-      echo "  Port 80 granted via setcap — browser URL: http://team-mem/"
-    else
-      echo "  setcap failed — browser URL: http://team-mem:7438/"
-    fi
-  else
-    echo "  Browser URL: http://team-mem:7438/"
-  fi
-
-  if [ "$OS" = "linux" ]; then
-    # ── systemd user service ───────────────────────────────────────────────
-    SVCDIR="$HOME/.config/systemd/user"
-    mkdir -p "$SVCDIR"
-    cat > "$SVCDIR/team-memory-mcp.service" <<EOF
-[Unit]
-Description=Team Memory MCP Server
-After=default.target
-
-[Service]
-ExecStart=$BIN_DIR/$BINARY --port $PORT
-Restart=on-failure
-RestartSec=5s
-Environment=HOME=$HOME
-Environment=PATH=$SERVICE_PATH
-
-[Install]
-WantedBy=default.target
-EOF
-    systemctl --user daemon-reload
-    systemctl --user enable --now team-memory-mcp
-    echo "  systemd user service started"
-    echo "  Manage: systemctl --user status team-memory-mcp"
-
-  elif [ "$OS" = "darwin" ]; then
-    # ── launchd user agent (macOS) ────────────────────────────────────────
-    PLIST_DIR="$HOME/Library/LaunchAgents"
-    PLIST="$PLIST_DIR/com.team-memory.mcp.plist"
-    LOG_DIR="$HOME/.local/share/team-memory"
-    mkdir -p "$PLIST_DIR" "$LOG_DIR"
-    cat > "$PLIST" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.team-memory.mcp</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>$BIN_DIR/$BINARY</string>
-    <string>--port</string>
-    <string>$PORT</string>
-  </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>$SERVICE_PATH</string>
-  </dict>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>StandardOutPath</key>
-  <string>$LOG_DIR/mcp.log</string>
-  <key>StandardErrorPath</key>
-  <string>$LOG_DIR/mcp.log</string>
-</dict>
-</plist>
-EOF
-    # Unload existing if present, then load
-    DOMAIN="gui/$(id -u)"
-    launchctl bootout "$DOMAIN/com.team-memory.mcp" 2>/dev/null || true
-    if ! launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null; then
-      # Older macOS / non-GUI session fallback
-      launchctl unload "$PLIST" 2>/dev/null || true
-      launchctl load -w "$PLIST"
-    fi
-    echo "  launchd agent loaded"
-    echo "  Manage: launchctl list | grep team-memory"
-    echo "  Log:    tail -f $LOG_DIR/mcp.log"
-    echo "  Browser URL: http://team-mem:$PORT/"
-  fi
-fi
-
-# ── summary ──────────────────────────────────────────────────────────────────
-echo ""
-echo "✓ team-memory-mcp installed"
-echo ""
-echo "  Binary:  $BIN_DIR/$BINARY"
-echo "  Config:  ${XDG_CONFIG_HOME:-$HOME/.config}/team-memory/config.json"
-echo "  Hooks:   $HOME/.claude/settings.json  (SessionEnd, PreCompact)"
-echo "  MCP:     $HOME/.claude.json           (team-memory server)"
-echo ""
-if [ "$RUN_CHOICE" = "1" ]; then
-  if [ "$PORT" = "80" ]; then
-    echo "  Web UI:  http://team-mem/"
-  else
-    echo "  Web UI:  http://team-mem:$PORT/"
-  fi
-else
-  echo "  Web UI:  http://127.0.0.1:7438/  (available while Claude Code is running)"
-fi
-echo ""
-echo "  Restart your terminal for PATH changes to take effect."
+# ── configure: memory repo, Claude Code hooks, MCP server ────────────────────
+# The binary reads answers from /dev/tty itself, so this works under `curl | sh`.
+# (exec skips the EXIT trap, so clean up first.)
+rm -rf "$TMP"
+trap - EXIT INT TERM
+exec "$BIN_DIR/$BINARY" install "$@"

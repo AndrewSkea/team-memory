@@ -1,12 +1,15 @@
 package prompts
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPromptsEmbedded(t *testing.T) {
-	if len(Categorize) < 100 {
-		t.Errorf("Categorize prompt too short: %d bytes", len(Categorize))
+	if len(Extract) < 500 || !strings.Contains(Extract, `"memories"`) {
+		t.Errorf("Extract prompt missing or truncated: %d bytes", len(Extract))
 	}
-	if len(Summarize) < 50 {
-		t.Errorf("Summarize prompt too short: %d bytes", len(Summarize))
+	if len(Classify) < 200 || !strings.Contains(Classify, `"title"`) {
+		t.Errorf("Classify prompt missing or truncated: %d bytes", len(Classify))
 	}
 }
