@@ -2,55 +2,74 @@
 
 ## Prerequisites
 
-- Go 1.22+
-- Node 20+
-- A GitHub repo + fine-grained PAT with `contents:write` (for manual testing)
+- Go (version in `mcp/go.mod`)
+- Node 22+ (web UI tests only)
 
-## Build
+No GitHub account, token or Claude login is needed to run the tests: they use an in-memory fake of the GitHub API and a scripted stand-in for the LLM.
+
+## Build and test
 
 ```bash
-make build          # copies prompts, builds binary → mcp/team-memory-mcp(.exe)
-make install        # build + copy to ~/bin
-make test           # frontend + MCP unit tests
-make test-all       # + Playwright e2e tests
+make build      # embed prompts + web UI, build mcp/team-memory-mcp
+make test       # Go tests (incl. a full end-to-end run of the real binary) + web UI unit tests
+make test-e2e   # Playwright browser tests against the real binary and a fake GitHub
 ```
 
-## Project layout
+Run a local instance against the fake GitHub:
 
-```
-mcp/                Go binary (MCP server + HTTP server + hooks)
-  config/           Config file read/write
-  github/           GitHub REST client (get, commit, put)
-  hook/             Session-end / precompact hook handlers
-  llm/              Claude CLI runner
-  server/           HTTP handlers (/health, /v1/config, /v1/categorize, …)
-frontend/           Vanilla JS + CSS web UI (embedded into binary via go:embed)
-  src/pages/        Page renderers (remember, lookup, stats, stale, setup)
-  src/services/     GitHub client, cache, LLM backends, index parser
-prompts/            Source-of-truth prompt text files
-scripts/            copy-prompts.sh (prompts/ → frontend/prompts/ + mcp/prompts/)
-install.sh          Bash installer (macOS/Linux)
-install.ps1         PowerShell installer (Windows)
+```bash
+make build fakegh
+./mcp/fakegh &                                    # fake acme/kb, token "tok", user "alice"
+TEAM_MEMORY_API_URL=http://127.0.0.1:19439 \
+TEAM_MEMORY_CONFIG=/tmp/tm/config.json TEAM_MEMORY_DATA=/tmp/tm/data \
+  ./mcp/team-memory-mcp serve                     # open http://127.0.0.1:7438, repo acme/kb, token tok
 ```
 
-The binary serves two roles depending on flags:
-- `--port N` — HTTP server + embedded web UI
-- `--mcp` — MCP stdio server (used by Claude Code)
-- `--once session-end|precompact` — one-shot hook handler
+## Layout
 
-## Making changes
+```
+mcp/                     Go module — the single team-memory-mcp binary
+  main.go, cli_*.go      CLI commands (serve, mcp, hook, install, doctor, …)
+  app/                   Core: capture pipeline, recall, review queue, setup, stats
+  hook/                  Claude Code hook handlers (+ detached capture worker)
+  mcpserver/             MCP stdio server and tools
+  server/                Local HTTP API for the web UI
+  store/                 Local mirror of the memory repo (tarball sync, write-through)
+  memory/                Memory file format (frontmatter) + legacy parser
+  search/                BM25 + entity ranking
+  entities/              System catalogue and alias matching
+  policy/                Capture modes and team policy
+  secrets/               Credential redaction
+  workspace/             Git remote and dependency/env signals for a directory
+  transcript/            Claude Code transcript reader
+  github/                GitHub REST client
+  installer/             Claude Code settings, MCP registration, slash commands, launchd/systemd
+  llm/                   claude CLI / Anthropic API runners
+  internal/fakegh        Fake GitHub API for tests (also cmd/fakegh)
+frontend/                Vanilla JS web UI, embedded in the binary
+prompts/                 LLM prompts (source of truth; copied into mcp/prompts by make)
+install.sh, install.ps1  Download + verify + `team-memory-mcp install`
+tests/frontend, tests/e2e
+```
 
-1. Fork and create a branch.
-2. Run `make test` before pushing.
-3. For frontend changes, run `make build` then `./mcp/team-memory-mcp --port 7438` to preview.
-4. Open a PR against `master`.
+## Environment variables
 
-## Code style
+| Variable | Purpose |
+|---|---|
+| `TEAM_MEMORY_CONFIG` / `TEAM_MEMORY_DATA` | Override config file / data directory |
+| `TEAM_MEMORY_API_URL` | GitHub API base (tests, GitHub Enterprise) |
+| `TEAM_MEMORY_MODEL` | Model alias for the `claude` CLI (default `haiku`) |
+| `TEAM_MEMORY_CLAUDE` | Path to the `claude` binary |
+| `ANTHROPIC_API_KEY` | Use the Messages API when the `claude` CLI isn't installed |
 
-- Go: standard `gofmt`, no external linter required
-- JS: vanilla ES modules, no bundler, no framework
-- Keep dependencies minimal — the binary must stay a single self-contained file
+## Guidelines
+
+- Keep the binary self-contained and the dependency list short.
+- Hooks must never break a Claude Code session: log and exit 0.
+- Anything that reaches the memory repo goes through `secrets.Redact` and the capture policy.
+- Go: `gofmt`, `go vet`. JS: vanilla ES modules, escape everything you interpolate into HTML.
+- Add tests with behaviour changes; CI runs on macOS, Linux and Windows.
 
 ## Releases
 
-Push a `v*` tag to trigger goreleaser via GitHub Actions. Binaries are published automatically.
+Push a `v*` tag. The release workflow runs the tests, then GoReleaser publishes binaries and checksums that the installers download.

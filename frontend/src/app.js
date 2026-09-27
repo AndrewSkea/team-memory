@@ -1,104 +1,102 @@
-import { renderSetup } from "./pages/setup.js";
+import { api } from "./services/api.js";
+import { escapeHtml } from "./services/html.js";
 import { renderRemember } from "./pages/remember.js";
-import { renderLookup } from "./pages/lookup.js";
+import { renderSearch } from "./pages/search.js";
+import { renderReview } from "./pages/review.js";
+import { renderMeetings } from "./pages/meetings.js";
 import { renderStats } from "./pages/stats.js";
-import { renderMeetings } from './pages/meetings.js';
-import { GitHubClient } from './services/github.js';
-import { escapeHtml } from './services/html.js';
+import { renderSettings } from "./pages/settings.js";
 
-const CONFIG_KEY = "team-memory:config";
-
-function loadConfig() {
-  try { return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {}; } catch { return {}; }
-}
-function saveConfig(c) { localStorage.setItem(CONFIG_KEY, JSON.stringify(c)); }
+let root = document.getElementById("root");
+const nav = document.getElementById("nav");
+const footer = document.getElementById("footer");
 
 export function toast(msg, isError = false) {
   const t = document.createElement("div");
   t.className = "toast" + (isError ? " error" : "");
+  t.setAttribute("role", isError ? "alert" : "status");
   t.textContent = msg;
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3500);
+  setTimeout(() => t.remove(), isError ? 6000 : 3500);
 }
 
-const root = document.getElementById("root");
-const nav = document.getElementById("nav");
-const footer = document.getElementById("footer");
+const state = { settings: null, page: "remember" };
 
-function updateFooter(config) {
-  if (config.owner && config.repo) {
-    footer.innerHTML = `<span class="footer-dot connected"></span>${escapeHtml(config.owner)} · ${escapeHtml(config.owner)}/${escapeHtml(config.repo)}`;
+const PAGES = {
+  remember: renderRemember,
+  search: renderSearch,
+  review: renderReview,
+  meetings: renderMeetings,
+  stats: renderStats,
+  settings: renderSettings,
+};
+
+async function refreshSettings() {
+  try {
+    state.settings = await api.settings();
+  } catch (e) {
+    state.settings = null;
+    toast(e.message, true);
+  }
+  updateChrome();
+  return state.settings;
+}
+
+function updateChrome() {
+  const s = state.settings;
+  const badge = document.getElementById("review-badge");
+  if (badge) {
+    const n = s?.pending_count ?? 0;
+    badge.textContent = n > 0 ? String(n) : "";
+    badge.hidden = n === 0;
+  }
+  if (s?.configured) {
+    footer.innerHTML = `<span class="footer-dot connected"></span>${escapeHtml(s.username || s.owner)} · ${escapeHtml(s.owner)}/${escapeHtml(s.repo)} · mode: ${escapeHtml(s.effective_mode)}`;
   } else {
-    footer.innerHTML = `<span class="footer-dot"></span><button id="forget-auth-footer" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:0;line-height:1;vertical-align:middle;">Forget auth</button>`;
-    document.getElementById("forget-auth-footer")?.addEventListener("click", forgetAuth);
+    footer.innerHTML = `<span class="footer-dot"></span>Not set up`;
   }
 }
 
-function forgetAuth() {
-  if (confirm("Clear saved credentials? You will need to re-enter them.")) {
-    localStorage.removeItem(CONFIG_KEY);
-    go("remember");
-  }
-}
-
-export function go(page) {
-  const config = loadConfig();
-  if (page !== "setup" && (!config.token || !config.owner)) {
-    page = "setup";
-  }
+export async function go(page) {
+  if (!state.settings?.configured && page !== "settings") page = "settings";
+  if (!PAGES[page]) page = "remember";
+  state.page = page;
+  if (location.hash !== "#" + page) history.replaceState(null, "", "#" + page);
   for (const b of nav.querySelectorAll("button[data-page]")) {
-    b.classList.toggle("active", b.dataset.page === page);
+    const active = b.dataset.page === page;
+    b.classList.toggle("active", active);
+    if (active) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
   }
-  updateFooter(config);
-  const gh = new GitHubClient(config);
-  if (page === "setup") {
-    renderSetup(root, {
-      config,
-      onDone: c => { saveConfig(c); toast("Setup saved."); go("remember"); },
-    });
-  } else if (page === "remember") {
-    renderRemember(root, { config, toast, forgetAuth });
-  } else if (page === "lookup") {
-    renderLookup(root, { config, toast });
-  } else if (page === "stats") {
-    renderStats(root, { config, toast });
-  } else if (page === "meetings") {
-    renderMeetings(root, config, gh);
-  } else {
-    renderRemember(root, { config, toast, forgetAuth });
-  }
+  nav.hidden = !state.settings?.configured;
+  // A fresh container per render drops listeners the previous page attached.
+  const fresh = root.cloneNode(false);
+  root.replaceWith(fresh);
+  root = fresh;
+  await PAGES[page](root, { settings: state.settings, toast, go, refreshSettings });
 }
+
+// Back/forward and #page links route without a reload.
+window.addEventListener("hashchange", () => {
+  const page = location.hash.replace("#", "");
+  if (page && page !== state.page) go(page);
+});
 
 nav.addEventListener("click", e => {
   const b = e.target.closest("button[data-page]");
   if (b) go(b.dataset.page);
 });
 
-// Bootstrap: fetch health (version) + pre-populate localStorage from CLI config on first visit
 async function bootstrap() {
   try {
-    const h = await fetch("/health");
-    if (h.ok) {
-      const { version } = await h.json();
-      if (version) {
-        const sub = document.querySelector(".subtitle");
-        if (sub) sub.textContent = version;
-      }
-    }
-  } catch (e) {
-    console.warn("bootstrap: /health unreachable — backend may not be running", e);
-  }
-  if (!loadConfig().token) {
-    try {
-      const r = await fetch("/v1/config");
-      if (r.ok) {
-        const cfg = await r.json();
-        if (cfg.token && cfg.owner && cfg.repo) { saveConfig(cfg); }
-      }
-    } catch (e) {
-      console.warn("bootstrap: /v1/config unreachable", e);
-    }
-  }
-  go("remember");
+    const h = await api.health();
+    const sub = document.querySelector(".subtitle");
+    if (sub && h.version) sub.textContent = `v${h.version.replace(/^v/, "")}`;
+  } catch { /* shown by refreshSettings */ }
+  await refreshSettings();
+  const wanted = location.hash.replace("#", "") || "remember";
+  await go(wanted);
+  // Keep the review badge fresh (captures land in the background).
+  setInterval(() => { if (document.visibilityState === "visible") refreshSettings(); }, 60_000);
 }
+
 bootstrap();

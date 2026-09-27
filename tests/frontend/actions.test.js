@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { formatAction, toggleActionLine } from '../../frontend/src/pages/actions.js';
+import { formatAction, toggleActionLine } from '../../frontend/src/lib/formats.js';
 
 describe('formatAction', () => {
   it('formats action with all fields', () => {

@@ -1,22 +1,21 @@
 import { defineConfig } from '@playwright/test';
-
-const PORT = 19438;
-const binaryPath = process.platform === 'win32'
-  ? 'mcp\\team-memory-mcp.exe'
-  : './mcp/team-memory-mcp';
+import { PORT } from './tests/e2e/paths.mjs';
 
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 30_000,
-  retries: 1,
+  retries: process.env.CI ? 1 : 0,
+  // The suite walks one shared, stateful install (setup → save → review…).
+  workers: 1,
+  fullyParallel: false,
 
   webServer: {
-    command: `${binaryPath} --port ${PORT}`,
+    command: 'node tests/e2e/start-servers.mjs',
     url: `http://127.0.0.1:${PORT}/health`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 10_000,
+    reuseExistingServer: false,
+    timeout: 20_000,
     stdout: 'ignore',
-    stderr: 'ignore',
+    stderr: 'pipe',
   },
 
   use: {

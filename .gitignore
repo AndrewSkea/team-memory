@@ -22,6 +22,8 @@ node_modules/
 # Go
 mcp/team-memory-mcp
 mcp/team-memory-mcp.exe
+mcp/fakegh
+mcp/fakegh.exe
 
 # Editor
 .vscode/

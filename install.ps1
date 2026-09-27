@@ -1,312 +1,73 @@
+# team-memory installer for Windows.
+#
+#   irm https://raw.githubusercontent.com/AndrewSkea/team-memory/master/install.ps1 | iex
+#
+# Environment: TEAM_MEMORY_VERSION (e.g. v1.0.0, default latest),
+#              TEAM_MEMORY_BIN_DIR (default %USERPROFILE%\bin)
 $ErrorActionPreference = 'Stop'
 
-$RepoOwner = 'AndrewSkea'
-$RepoName  = 'team-memory'
-$Binary    = 'team-memory-mcp'
-$BinDir    = "$env:USERPROFILE\bin"
+$Repo    = 'AndrewSkea/team-memory'
+$Binary  = 'team-memory-mcp'
+$BinDir  = if ($env:TEAM_MEMORY_BIN_DIR) { $env:TEAM_MEMORY_BIN_DIR } else { "$env:USERPROFILE\bin" }
+$Version = if ($env:TEAM_MEMORY_VERSION) { $env:TEAM_MEMORY_VERSION } else { 'latest' }
+$ExePath = Join-Path $BinDir "$Binary.exe"
 
-# ── detect arch ───────────────────────────────────────────────────────────────
 $Arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     'AMD64' { 'amd64' }
-    'ARM64' { 'arm64' }
-    default { Write-Error "Unsupported architecture: $env:PROCESSOR_ARCHITECTURE"; exit 1 }
+    'ARM64' { 'amd64' }  # runs under x64 emulation
+    default { throw "Unsupported architecture: $env:PROCESSOR_ARCHITECTURE" }
 }
 
-# ── fetch latest release tag ──────────────────────────────────────────────────
-Write-Host "Fetching latest release..."
-$Release = Invoke-RestMethod "https://api.github.com/repos/$RepoOwner/$RepoName/releases/latest"
-$Tag = $Release.tag_name
-Write-Host "Installing $Binary $Tag (windows/$Arch)"
-
-# ── download archive + checksums ──────────────────────────────────────────────
-$Archive  = "${Binary}_windows_${Arch}.zip"
-$Base     = "https://github.com/$RepoOwner/$RepoName/releases/download/$Tag"
-$TmpDir   = Join-Path $env:TEMP "team-memory-install-$(Get-Random)"
-New-Item -ItemType Directory -Path $TmpDir | Out-Null
+$Archive = "${Binary}_windows_${Arch}.zip"
+$Base = if ($env:TEAM_MEMORY_DOWNLOAD_BASE) { $env:TEAM_MEMORY_DOWNLOAD_BASE } elseif ($Version -eq 'latest') { "https://github.com/$Repo/releases/latest/download" } else { "https://github.com/$Repo/releases/download/$Version" }
+$Tmp = Join-Path ([System.IO.Path]::GetTempPath()) "team-memory-install-$([guid]::NewGuid())"
+New-Item -ItemType Directory -Path $Tmp | Out-Null
 
 try {
-    Invoke-WebRequest "$Base/$Archive"      -OutFile "$TmpDir\$Archive"
-    Invoke-WebRequest "$Base/checksums.txt" -OutFile "$TmpDir\checksums.txt"
+    Write-Host "Downloading $Binary ($Version, windows/$Arch)..."
+    $ProgressPreference = 'SilentlyContinue'
+    Invoke-WebRequest "$Base/$Archive" -OutFile "$Tmp\$Archive" -UseBasicParsing
+    Invoke-WebRequest "$Base/checksums.txt" -OutFile "$Tmp\checksums.txt" -UseBasicParsing
 
-    # ── verify SHA256 ────────────────────────────────────────────────────────
-    $Expected = (Get-Content "$TmpDir\checksums.txt" | Where-Object { $_ -match $Archive }) -replace '\s.*', ''
-    if (-not $Expected) { Write-Error "$Archive not found in checksums.txt"; exit 1 }
-    $Actual = (Get-FileHash "$TmpDir\$Archive" -Algorithm SHA256).Hash.ToLower()
-    if ($Expected -ne $Actual) {
-        Write-Error "Checksum mismatch!`n  expected: $Expected`n  got:      $Actual"
-        exit 1
-    }
+    # ── verify SHA-256 ───────────────────────────────────────────────────────
+    $Line = Get-Content "$Tmp\checksums.txt" | Where-Object { ($_ -split '\s+')[1] -eq $Archive } | Select-Object -First 1
+    if (-not $Line) { throw "$Archive not listed in checksums.txt" }
+    $Expected = ($Line -split '\s+')[0].ToLower()
+    $Actual = (Get-FileHash "$Tmp\$Archive" -Algorithm SHA256).Hash.ToLower()
+    if ($Expected -ne $Actual) { throw "Checksum mismatch (expected $Expected, got $Actual)" }
 
-    # ── install binary ────────────────────────────────────────────────────────
+    # ── install binary ───────────────────────────────────────────────────────
+    Expand-Archive "$Tmp\$Archive" -DestinationPath $Tmp -Force
     if (-not (Test-Path $BinDir)) { New-Item -ItemType Directory -Path $BinDir | Out-Null }
-    Expand-Archive "$TmpDir\$Archive" -DestinationPath $TmpDir -Force
-    # Kill running instance before overwriting the locked binary
+    # A running copy (web UI / MCP server) locks the exe; stop it first.
     Get-Process -Name $Binary -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
-    Copy-Item "$TmpDir\$Binary.exe" "$BinDir\$Binary.exe" -Force
-    Write-Host "Installed to $BinDir\$Binary.exe"
-
+    Copy-Item "$Tmp\$Binary.exe" $ExePath -Force
+    Write-Host "Installed $ExePath ($(& $ExePath version))"
 } finally {
-    Remove-Item $TmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $Tmp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# ── add ~/bin to User PATH ────────────────────────────────────────────────────
+# ── put BinDir on the user PATH ──────────────────────────────────────────────
 $UserPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
-if ($UserPath -notlike "*$BinDir*") {
+if (($UserPath -split ';') -notcontains $BinDir) {
     [Environment]::SetEnvironmentVariable('PATH', "$BinDir;$UserPath", 'User')
-    Write-Host "Added $BinDir to User PATH"
-} else {
-    Write-Host "$BinDir already in PATH"
+    $env:PATH = "$BinDir;$env:PATH"
+    Write-Host "Added $BinDir to your PATH (new terminals will pick it up)"
 }
 
-# ── read existing config (if any) ────────────────────────────────────────────
-$ConfigDir  = "$env:APPDATA\team-memory"
-$ConfigFile = "$ConfigDir\config.json"
-$ExistingPAT  = ""
-$ExistingSlug = ""
-if (Test-Path $ConfigFile) {
-    try {
-        $raw = (Get-Content $ConfigFile -Raw -Encoding UTF8).TrimStart([char]0xFEFF)
-        $j   = $raw | ConvertFrom-Json
-        $ExistingPAT = $j.token
-        if ($j.owner -and $j.repo) { $ExistingSlug = "$($j.owner)/$($j.repo)" }
-    } catch {
-        Write-Host "Warning: could not parse existing $ConfigFile - will prompt for fresh values."
-    }
+# ── configure: memory repo, Claude Code hooks, MCP server ────────────────────
+& $ExePath install --no-service @args
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+# ── optional: keep the web UI running in the background ──────────────────────
+$RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$HasAutostart = $null -ne (Get-ItemProperty -Path $RunKey -Name 'TeamMemory' -ErrorAction SilentlyContinue)
+$Answer = if ($HasAutostart) { 'y' } else { Read-Host "Keep the web UI running in the background (starts at login)? [y/N]" }
+if ($Answer -match '^(y|yes)$') {
+    Set-ItemProperty -Path $RunKey -Name 'TeamMemory' -Value "`"$ExePath`" serve --port 7438"
+    # Clean up the pre-1.0 autostart entry name.
+    Remove-ItemProperty -Path $RunKey -Name 'TeamMemoryMCP' -ErrorAction SilentlyContinue
+    Start-Process -FilePath $ExePath -ArgumentList 'serve','--port','7438' -WindowStyle Hidden
+    Write-Host "Background web UI enabled: http://127.0.0.1:7438/"
 }
-
-# ── prompt for config ─────────────────────────────────────────────────────────
-Write-Host ""
-$PatPrompt = if ($ExistingPAT) { "GitHub PAT [keep existing]" } else { "GitHub PAT (fine-grained, contents:write on your memory repo)" }
-$PatSecure = Read-Host $PatPrompt -AsSecureString
-$BSTR      = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($PatSecure)
-$PAT       = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($BSTR)
-[System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
-if (-not $PAT) { $PAT = $ExistingPAT }
-
-$SlugPrompt = if ($ExistingSlug) { "Repo (owner/name) [$ExistingSlug]" } else { "Repo (owner/name, e.g. alice/my-memory)" }
-$Slug = Read-Host $SlugPrompt
-if (-not $Slug) { $Slug = $ExistingSlug }
-
-# ── write config ──────────────────────────────────────────────────────────────
-if ($PAT -and $Slug) {
-    $Parts  = $Slug -split '/', 2
-    $Owner  = $Parts[0]
-    $Repo   = $Parts[1]
-    if (-not (Test-Path $ConfigDir)) { New-Item -ItemType Directory -Path $ConfigDir | Out-Null }
-    $ConfigJson = @{token=$PAT; owner=$Owner; repo=$Repo; check_first=$false} | ConvertTo-Json
-    [System.IO.File]::WriteAllText($ConfigFile, $ConfigJson, (New-Object System.Text.UTF8Encoding $false))
-    Write-Host "Config written to $ConfigFile"
-} else {
-    Write-Host "Warning: PAT or repo blank - skipping config."
-    Write-Host "  Write $ConfigFile manually or re-run install.ps1."
-}
-
-# ── detect elevation ─────────────────────────────────────────────────────────
-$IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
-# ── choose run mode ───────────────────────────────────────────────────────────
-Write-Host ""
-Write-Host "How should team-memory-mcp run?"
-Write-Host "  1) Always-on service - starts at login, browser at http://127.0.0.1:7438/"
-if ($IsAdmin) {
-    Write-Host "     (running as admin: also sets up http://team-mem/ shortcut)"
-} else {
-    Write-Host "     (not admin: uses registry Run key; re-run as admin for http://team-mem/ shortcut)"
-}
-Write-Host "  2) With Claude Code  - auto-starts when Claude Code runs (lighter weight)"
-$RunChoice = Read-Host "Choice [1/2, default 2]"
-if (-not $RunChoice) { $RunChoice = "2" }
-
-# ── wire Claude Code hooks ────────────────────────────────────────────────────
-$SettingsPath = "$env:USERPROFILE\.claude\settings.json"
-$SettingsDir  = Split-Path $SettingsPath
-if (-not (Test-Path $SettingsDir)) { New-Item -ItemType Directory -Path $SettingsDir | Out-Null }
-if (-not (Test-Path $SettingsPath)) { [System.IO.File]::WriteAllText($SettingsPath, '{}', (New-Object System.Text.UTF8Encoding $false)) }
-
-$HooksPy = @'
-import sys, json
-
-path = sys.argv[1]
-with open(path, encoding='utf-8') as f:
-    settings = json.load(f)
-
-settings.setdefault('hooks', {})
-new_hooks = {
-    'Stop':       [{'matcher': '', 'hooks': [{'type': 'command', 'command': 'team-memory-mcp --once session-end', 'timeout': 60}]}],
-    'PreCompact': [{'matcher': '', 'hooks': [{'type': 'command', 'command': 'team-memory-mcp --once precompact',  'timeout': 60}]}],
-}
-for event, entries in new_hooks.items():
-    existing = settings['hooks'].get(event, [])
-    already = any(
-        h.get('command', '').find('team-memory-mcp') >= 0
-        for e in existing for h in e.get('hooks', [])
-    )
-    if not already:
-        settings['hooks'][event] = existing + entries
-        print(f'  Hooked {event}')
-    else:
-        print(f'  {event} already wired')
-
-with open(path, 'w', encoding='utf-8') as f:
-    json.dump(settings, f, indent=2)
-'@
-$HooksPy | python - $SettingsPath
-
-# ── register MCP server in ~/.claude.json ────────────────────────────────────
-$ClaudeJson = "$env:USERPROFILE\.claude.json"
-if (-not (Test-Path $ClaudeJson)) { [System.IO.File]::WriteAllText($ClaudeJson, '{}', (New-Object System.Text.UTF8Encoding $false)) }
-
-# Service mode: Claude Code starts on port 7439 to avoid conflict with service on 7438
-# Pass args as individual positional params (PS 5.1 strips quotes from JSON strings)
-if ($RunChoice -eq "1") {
-    $McpArgList = @("--mcp", "--port", "7439")
-} else {
-    $McpArgList = @("--mcp")
-}
-
-$McpPy = @'
-import sys, json
-
-path = sys.argv[1]
-binary_path = sys.argv[2]
-args = sys.argv[3:]
-with open(path, encoding='utf-8') as f:
-    data = json.load(f)
-
-data.setdefault('mcpServers', {})
-if 'team-memory' not in data['mcpServers']:
-    data['mcpServers']['team-memory'] = {'command': binary_path, 'args': args}
-    print('  MCP server registered')
-else:
-    data['mcpServers']['team-memory']['args'] = args
-    print('  MCP server updated')
-
-with open(path, 'w', encoding='utf-8') as f:
-    json.dump(data, f, indent=2)
-'@
-$McpPy | python - $ClaudeJson "$BinDir\$Binary.exe" @McpArgList
-
-# ── service setup ─────────────────────────────────────────────────────────────
-$Port = 7438
-$WebUrl = "http://127.0.0.1:$Port/"
-
-if ($RunChoice -eq "1") {
-    $ExePath = "$BinDir\$Binary.exe"
-
-    if ($IsAdmin) {
-        # ── admin path: Task Scheduler (RunLevel Highest) + hosts + portproxy 80->7438 ──
-        # Go uses raw sockets (net.Listen), not HTTP.sys, so binding port 80 directly
-        # requires the process to be elevated. Using portproxy avoids that: the binary
-        # always listens on 7438 and netsh forwards 127.0.0.1:80 -> 127.0.0.1:7438.
-        $HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
-        $HostsContent = Get-Content $HostsFile -Raw -ErrorAction SilentlyContinue
-        if ($HostsContent -notlike "*team-mem*") {
-            Add-Content -Path $HostsFile -Value "`r`n127.0.0.1 team-mem" -ErrorAction SilentlyContinue
-            Write-Host "  Added team-mem to hosts file"
-        } else {
-            Write-Host "  team-mem already in hosts file"
-        }
-
-        # portproxy: browser hits team-mem:80 -> 127.0.0.1:7438
-        & netsh interface portproxy add v4tov4 listenport=80 listenaddress=127.0.0.1 connectport=7438 connectaddress=127.0.0.1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "  Port 80 portproxy set - browser URL: http://team-mem/"
-            $WebUrl = "http://team-mem/"
-        } else {
-            Write-Host "  portproxy failed - browser URL: http://team-mem:7438/"
-            $WebUrl = "http://team-mem:7438/"
-        }
-
-        $TaskName  = "TeamMemoryMCP"
-        $Action    = New-ScheduledTaskAction -Execute $ExePath -Argument "--port 7438"
-        $Trigger   = New-ScheduledTaskTrigger -AtLogOn
-        $Settings  = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit 0 -MultipleInstances IgnoreNew
-        $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest
-        Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Principal $Principal -Force | Out-Null
-        Write-Host "  Task '$TaskName' registered (auto-starts at logon)"
-        # Start-ScheduledTask with RunLevel Highest queues rather than starts when called
-        # from within an elevated session. Start directly instead.
-        Get-Process -Name $Binary -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Milliseconds 500
-        Start-Process -FilePath $ExePath -ArgumentList '--port 7438' -WindowStyle Hidden
-        Write-Host "  Started team-memory-mcp on port 7438"
-
-    } else {
-        # ── non-admin path: registry Run key, port 7438 ───────────────────────
-        $RegPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-        Set-ItemProperty -Path $RegPath -Name 'TeamMemoryMCP' -Value "`"$ExePath`" --port 7438" -ErrorAction Stop
-        Write-Host "  Autostart registered in HKCU Run key"
-
-        # Start now in background (don't wait)
-        Start-Process -FilePath $ExePath -ArgumentList '--port 7438' -WindowStyle Hidden
-        Write-Host "  Started team-memory-mcp on port 7438"
-
-        Write-Host ""
-        Write-Host "  NOTE: http://team-mem/ shortcut requires admin. To set it up:"
-        Write-Host "    1. Re-run this script as Administrator"
-        Write-Host "    OR manually add to $env:SystemRoot\System32\drivers\etc\hosts:"
-        Write-Host "       127.0.0.1 team-mem"
-        Write-Host "    (then access via http://team-mem:7438/)"
-
-        $WebUrl = "http://127.0.0.1:7438/"
-    }
-} else {
-    $WebUrl = "http://127.0.0.1:7438/  (available while Claude Code is running)"
-}
-
-# ── summary ───────────────────────────────────────────────────────────────────
-Write-Host ""
-Write-Host "team-memory-mcp installed OK"
-Write-Host ""
-Write-Host "  Binary:  $BinDir\$Binary.exe"
-Write-Host "  Config:  $env:APPDATA\team-memory\config.json"
-# ── install Claude Code slash commands ───────────────────────────────────────
-$CommandsDir = "$env:USERPROFILE\.claude\commands"
-if (-not (Test-Path $CommandsDir)) { New-Item -ItemType Directory -Path $CommandsDir | Out-Null }
-
-$SearchCmd = @'
-Search team memory for: $ARGUMENTS
-
-Use the `lookup` MCP tool with "$ARGUMENTS" as the query. Present the results clearly, grouped by source file. If no results are found, say so briefly.
-'@
-[System.IO.File]::WriteAllText(
-    "$CommandsDir\memory-search.md",
-    $SearchCmd,
-    (New-Object System.Text.UTF8Encoding $false)
-)
-
-$AddCmd = @'
-Save the following note to team memory: $ARGUMENTS
-
-Use the Bash tool to run this command — Python handles JSON encoding so quotes and special characters work correctly:
-
-```bash
-python3 - "$ARGUMENTS" << 'PYEOF'
-import json, sys, urllib.request
-note = sys.argv[1]
-body = json.dumps({"text": note, "title": ""}).encode("utf-8")
-req = urllib.request.Request(
-    "http://127.0.0.1:7438/v1/quick-add",
-    body,
-    {"Content-Type": "application/json"}
-)
-with urllib.request.urlopen(req) as resp:
-    print(resp.read().decode("utf-8"))
-PYEOF
-```
-
-Parse the response JSON and report the `file` field (e.g. "Saved to DECISIONS.md"). If connection is refused, the server is not running — start it with `team-memory-mcp`.
-'@
-[System.IO.File]::WriteAllText(
-    "$CommandsDir\memory-add.md",
-    $AddCmd,
-    (New-Object System.Text.UTF8Encoding $false)
-)
-
-Write-Host "  Commands: $CommandsDir  (memory-search, memory-add)"
-Write-Host "  Hooks:   $env:USERPROFILE\.claude\settings.json  (Stop, PreCompact)"
-Write-Host "  MCP:     $env:USERPROFILE\.claude.json           (team-memory server)"
-Write-Host "  Web UI:  $WebUrl"
-Write-Host ""
-Write-Host "  Restart your terminal for PATH changes to take effect."

@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { formatMeeting, MEETING_TEMPLATES, applyMeetingTemplate } from '../../frontend/src/pages/meetings.js';
+import { formatMeeting, MEETING_TEMPLATES, applyMeetingTemplate } from '../../frontend/src/lib/formats.js';
 
 describe('formatMeeting', () => {
   it('formats a meeting with all fields', () => {

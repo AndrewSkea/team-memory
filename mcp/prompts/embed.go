@@ -1,15 +1,11 @@
+// Package prompts embeds the LLM prompts. Source of truth is /prompts; run
+// `make build` (scripts/copy-prompts.sh) to refresh the copies here.
 package prompts
 
 import _ "embed"
 
-//go:embed categorize.txt
-var Categorize string
+//go:embed extract.txt
+var Extract string
 
-//go:embed summarize.txt
-var Summarize string
-
-//go:embed session.txt
-var Session string
-
-//go:embed reminder.txt
-var Reminder string
+//go:embed classify.txt
+var Classify string
