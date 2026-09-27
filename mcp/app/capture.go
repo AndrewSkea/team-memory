@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,7 +23,7 @@ import (
 
 const (
 	transcriptBudget = 60_000 // characters of conversation sent to the extractor
-	minTranscript    = 400    // below this there's nothing worth extracting
+	minTranscript    = 150    // below this ("hi", "thanks") skip the LLM call; the extractor filters the rest
 )
 
 // extraction is the extractor's JSON output.
@@ -62,8 +63,81 @@ func (r CaptureResult) String() string {
 
 // ProcessQueue runs all queued capture jobs. Failed jobs are retried by a
 // later run (up to 3 attempts), so being offline loses nothing.
+//
+// Only one worker runs at a time: two workers could otherwise capture the
+// same session concurrently (e.g. PreCompact and SessionEnd firing close
+// together) and both extract the same transcript lines.
 func (a *App) ProcessQueue(ctx context.Context) {
-	for _, path := range a.claimJobs() {
+	// Each job is attempted at most once per run; failures wait for a later
+	// run (next session start or the background service) to retry.
+	seen := map[string]bool{}
+	for round := 0; round < 5; round++ {
+		unlock, ok := a.lockWorker()
+		if !ok {
+			return // another worker is running and will drain the queue
+		}
+		for ctx.Err() == nil {
+			var todo []string
+			for _, j := range a.claimJobs() {
+				base := jobBase(j)
+				if seen[base] {
+					_ = os.Rename(j, filepath.Join(a.queueDir(), base)) // unclaim
+					continue
+				}
+				seen[base] = true
+				todo = append(todo, j)
+			}
+			if len(todo) == 0 {
+				break
+			}
+			a.processJobs(ctx, todo)
+		}
+		unlock()
+		// A job enqueued between our last check and unlock would find the
+		// lock held and exit; pick it up here.
+		if !a.hasUnseenJobs(seen) || ctx.Err() != nil {
+			return
+		}
+	}
+}
+
+// jobBase maps a claimed job path back to its queue file name.
+func jobBase(path string) string {
+	return filepath.Base(strings.SplitN(path, ".working-", 2)[0])
+}
+
+func (a *App) hasUnseenJobs(seen map[string]bool) bool {
+	entries, _ := os.ReadDir(a.queueDir())
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".json") && !seen[e.Name()] {
+			return true
+		}
+	}
+	return false
+}
+
+// lockWorker takes the queue lock, reclaiming it if its holder died.
+func (a *App) lockWorker() (func(), bool) {
+	path := filepath.Join(a.queueDir(), ".worker.lock")
+	_ = os.MkdirAll(a.queueDir(), 0o700)
+	for attempt := 0; attempt < 2; attempt++ {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			fmt.Fprintf(f, "%d\n", os.Getpid())
+			f.Close()
+			return func() { os.Remove(path) }, true
+		}
+		info, statErr := os.Stat(path)
+		if statErr != nil || a.Now().Sub(info.ModTime()) < 15*time.Minute {
+			return nil, false
+		}
+		os.Remove(path) // stale: the previous worker crashed
+	}
+	return nil, false
+}
+
+func (a *App) processJobs(ctx context.Context, jobs []string) {
+	for _, path := range jobs {
 		var j Job
 		if err := readJSONFile(path, &j); err != nil {
 			a.Log.Printf("queue: drop unreadable job %s: %v", path, err)

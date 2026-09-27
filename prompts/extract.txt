@@ -21,7 +21,9 @@ Do NOT extract:
 - generic programming knowledge available in public docs
 - personal matters, opinions about people, HR/health/finance/family topics
 - credentials, tokens, passwords, private keys, personal data (never copy them, even partially)
-If nothing qualifies, return an empty "memories" list. Returning nothing is normal and good for most sessions.
+If nothing qualifies, return an empty "memories" list — that is normal for routine sessions.
+Exception: when the user explicitly shares something for the team or asks for it to be remembered ("note for the team", "remember that", "FYI everyone"), always extract it unless it is personal or sensitive; use confidence to reflect how sure you are it is correct.
+Don't duplicate related_memories: if one already says the same thing, skip it (or supersede it if the session changed it).
 
 For each memory:
 - "title": specific, ≤ 80 chars, states the knowledge itself (e.g. "Payments API rate-limits at 100 rps per key"), not the activity

@@ -486,3 +486,46 @@ func TestQueueRetriesAndCorrections(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestSingleWorker(t *testing.T) {
+	e := newEnv(t)
+	e.setup("auto")
+	e.runner.extract = extraction1
+	ctx := context.Background()
+	tp := e.transcriptFile(longChat...)
+	// Two jobs for the same session (PreCompact then SessionEnd).
+	e.app.Enqueue(Job{SessionID: "dup", TranscriptPath: tp, Cwd: e.work, Event: "precompact"})
+	e.app.Enqueue(Job{SessionID: "dup", TranscriptPath: tp, Cwd: e.work, Event: "session-end"})
+	// A second worker while one holds the lock does nothing.
+	unlock, ok := e.app.lockWorker()
+	if !ok {
+		t.Fatal("lock")
+	}
+	e.app.ProcessQueue(ctx)
+	if e.app.QueueLen() != 2 {
+		t.Fatal("second worker should not run")
+	}
+	unlock()
+	e.app.ProcessQueue(ctx)
+	if e.app.QueueLen() != 0 {
+		t.Fatal("queue not drained")
+	}
+	// The transcript was extracted once, not twice.
+	extracts := 0
+	for _, p := range e.runner.prompts {
+		if strings.Contains(p, "You extract durable team knowledge") {
+			extracts++
+		}
+	}
+	if extracts != 1 {
+		t.Fatalf("extracted %d times", extracts)
+	}
+	// A stale lock from a crashed worker is reclaimed.
+	lock := filepath.Join(e.app.queueDir(), ".worker.lock")
+	os.WriteFile(lock, []byte("1"), 0o600)
+	old := e.now.Add(-time.Hour)
+	os.Chtimes(lock, old, old)
+	if _, ok := e.app.lockWorker(); !ok {
+		t.Fatal("stale lock not reclaimed")
+	}
+}
