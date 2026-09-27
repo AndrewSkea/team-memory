@@ -123,7 +123,7 @@ func TestBinaryEndToEnd(t *testing.T) {
 			t.Fatalf("settings missing %s:\n%s", ev, settings)
 		}
 	}
-	claudeJSON, _ := os.ReadFile(filepath.Join(home, ".claude.json"))
+	claudeJSON, _ := os.ReadFile(filepath.Join(home, ".claude", ".claude.json")) // CLAUDE_CONFIG_DIR is set
 	if !strings.Contains(string(claudeJSON), h.bin) {
 		t.Fatalf("MCP not registered:\n%s", claudeJSON)
 	}
