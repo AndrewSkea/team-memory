@@ -30,7 +30,7 @@ var Modes = []Mode{Auto, AI, ReviewTimeout, Review, Manual}
 
 var Descriptions = map[Mode]string{
 	Auto:          "Publish everything the AI extracts immediately (personal/sensitive items are never shared)",
-	AI:            "AI decides: confident, clearly-shareable items publish; anything uncertain waits for your review",
+	AI:            "Confident, clearly shareable items publish; anything uncertain waits for your review",
 	ReviewTimeout: "Everything waits for review, but publishes automatically after a few days unless you reject it",
 	Review:        "Everything waits for your approval",
 	Manual:        "No automatic capture — only what you add yourself",

@@ -695,8 +695,8 @@ input, textarea, select, button { color: var(--text); }
 #text { min-height: 150px; }
 .row-label, .field-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
 .field-label { display: block; margin: 10px 0 4px; }
-.type-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-.type-row select { width: auto; flex: 1 1 140px; }
+#root, #results { display: flex; flex-direction: column; gap: 10px; }
+.type-row { display: grid; grid-template-columns: auto 1fr auto 1fr; align-items: center; gap: 10px; margin-bottom: 12px; }
 .fields-row select, .fields-row input { width: 100%; }
 .fields-row:has(> :nth-child(3)) { grid-template-columns: 1fr 1fr 1fr; }
 .filter-row { display: flex; gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
@@ -742,7 +742,7 @@ code { font-size: 12px; background: var(--inner); padding: 1px 5px; border-radiu
 .mode-option input { margin-top: 4px; accent-color: var(--accent); }
 .connected-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
-.review-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.card.review-head { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 12px; text-align: left; }
 .pending textarea { min-height: 70px; }
 .pending .why { font-size: 12px; color: var(--text-2); background: var(--inner); border-radius: 6px; padding: 6px 10px; margin: 8px 0 4px; }
 .pending .button-row { margin-top: 12px; }
@@ -755,6 +755,7 @@ code { font-size: 12px; background: var(--inner); padding: 1px 5px; border-radiu
 
 @media (max-width: 520px) {
   .fields-row, .fields-row:has(> :nth-child(3)) { grid-template-columns: 1fr; }
+  .type-row { grid-template-columns: auto 1fr; }
   .nav-btn svg { display: none; }
   .app { padding-top: 24px; }
 }

@@ -52,8 +52,7 @@ export function memoryCard(m, { settings, now, actions = true } = {}) {
       <span class="type type-${escapeHtml(m.type || "note")}">${escapeHtml(typeLabel(m.type))}</span>
       <h3>${escapeHtml(m.title)}</h3>
     </div>
-    ${m.summary ? `<p class="summary">${escapeHtml(m.summary)}</p>` : ""}
-    ${m.body && m.body !== m.summary ? `<details><summary>Details</summary><pre class="body">${escapeHtml(m.body)}</pre></details>` : ""}
+    ${summaryHtml(m)}
     ${inactive ? `<p class="status">${escapeHtml(m.status)}${m.status_reason ? ": " + escapeHtml(m.status_reason) : ""}</p>` : ""}
     <div class="memory-foot">
       <div class="chips">${about}</div>
@@ -64,6 +63,20 @@ export function memoryCard(m, { settings, now, actions = true } = {}) {
       ${!m.legacy && !inactive ? `<button class="link danger" data-forget="${escapeHtml(m.id)}">Forget</button>` : ""}
     </div>` : ""}
   </article>`;
+}
+
+// A memory's summary, falling back to the start of its body; the full body
+// goes behind "Details" only when it adds something.
+function summaryHtml(m) {
+  const body = (m.body ?? "").trim();
+  let summary = (m.summary ?? "").trim();
+  let showBody = body && body !== summary;
+  if (!summary && body) {
+    summary = body.length > 220 ? body.slice(0, 200).trimEnd() + "…" : body;
+    showBody = body.length > 220;
+  }
+  return (summary ? `<p class="summary">${escapeHtml(summary)}</p>` : "") +
+    (showBody ? `<details><summary>Details</summary><pre class="body">${escapeHtml(body)}</pre></details>` : "");
 }
 
 export function splitList(s) {
