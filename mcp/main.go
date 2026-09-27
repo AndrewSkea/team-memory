@@ -76,18 +76,34 @@ func tryListen(addr string, h http.Handler) {
 	}
 }
 
+// hookEvent is the JSON Claude Code writes to a hook's stdin. Claude Code
+// passes `transcript_path` (a JSONL file); the inline `transcript` array is
+// kept for callers that pipe messages directly.
 type hookEvent struct {
-	Transcript []hook.Message `json:"transcript"`
+	Transcript     []hook.Message `json:"transcript"`
+	TranscriptPath string         `json:"transcript_path"`
 }
 
 func runOnce(cmd string) error {
 	if cmd != "session-end" && cmd != "precompact" {
 		return fmt.Errorf("unknown --once command %q (want session-end|precompact)", cmd)
 	}
+	// The hook summarises via `claude -p`, which is itself a Claude Code
+	// session; never let that nested session trigger the hook again.
+	if os.Getenv(llm.NestedEnv) != "" {
+		return nil
+	}
 
 	var event hookEvent
 	if err := json.NewDecoder(os.Stdin).Decode(&event); err != nil {
-		event.Transcript = nil
+		event = hookEvent{}
+	}
+	if len(event.Transcript) == 0 && event.TranscriptPath != "" {
+		msgs, err := hook.ReadTranscriptFile(event.TranscriptPath)
+		if err != nil {
+			return fmt.Errorf("read transcript: %w", err)
+		}
+		event.Transcript = msgs
 	}
 	if len(event.Transcript) == 0 {
 		return nil

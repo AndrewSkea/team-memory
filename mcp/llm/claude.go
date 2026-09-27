@@ -15,6 +15,20 @@ import (
 // with the TEAM_MEMORY_MODEL env var if needed.
 const DefaultModel = "haiku"
 
+// NestedEnv is set on every `claude` child process. The hook handler exits
+// early when it sees it, so the nested session's own SessionEnd/PreCompact
+// hooks can't recursively summarise themselves.
+const NestedEnv = "TEAM_MEMORY_NESTED"
+
+// isolation keeps the child `claude -p` lightweight and side-effect free:
+// no user hooks, no MCP servers (which would spawn another team-memory
+// process), and no saved session cluttering the user's history.
+var isolation = []string{
+	"--settings", `{"disableAllHooks":true}`,
+	"--strict-mcp-config",
+	"--no-session-persistence",
+}
+
 type Claude struct {
 	path  string
 	model string
@@ -34,12 +48,14 @@ func NewClaude(path string) *Claude {
 // Run invokes `claude -p <prompt> --model <model> --output-format stream-json --verbose`
 // and returns the assembled assistant text.
 func (c *Claude) Run(ctx context.Context, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, c.path,
+	args := append([]string{
 		"-p", prompt,
 		"--model", c.model,
 		"--output-format", "stream-json",
 		"--verbose",
-	)
+	}, isolation...)
+	cmd := exec.CommandContext(ctx, c.path, args...)
+	cmd.Env = append(os.Environ(), NestedEnv+"=1")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

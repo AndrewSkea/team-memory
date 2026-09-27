@@ -51,8 +51,11 @@ fi
 # ── install binary ───────────────────────────────────────────────────────────
 mkdir -p "$BIN_DIR"
 tar -xzf "$TMP/$ARCHIVE" -C "$TMP"
-cp "$TMP/$BINARY" "$BIN_DIR/$BINARY"
-chmod +x "$BIN_DIR/$BINARY"
+# Replace atomically (new inode): on macOS, overwriting a signed binary in place
+# makes the kernel kill later launches with "Code Signature Invalid".
+cp "$TMP/$BINARY" "$BIN_DIR/.$BINARY.new"
+chmod +x "$BIN_DIR/.$BINARY.new"
+mv -f "$BIN_DIR/.$BINARY.new" "$BIN_DIR/$BINARY"
 echo "Installed to $BIN_DIR/$BINARY"
 
 # ── add ~/bin to PATH ────────────────────────────────────────────────────────
@@ -150,17 +153,30 @@ SETTINGS="$HOME/.claude/settings.json"
 mkdir -p "$(dirname "$SETTINGS")"
 [ -f "$SETTINGS" ] || printf '{}' > "$SETTINGS"
 
-python3 - "$SETTINGS" <<'PYEOF'
-import sys, json
+python3 - "$SETTINGS" "$BIN_DIR/$BINARY" <<'PYEOF'
+import sys, json, shlex
 
-path = sys.argv[1]
+path, binary = sys.argv[1], shlex.quote(sys.argv[2])
 with open(path) as f:
     settings = json.load(f)
 
 settings.setdefault('hooks', {})
+
+# Older installs hooked `Stop`, which fires after every assistant turn rather
+# than once per session. Remove those entries; SessionEnd replaces them.
+stop = settings['hooks'].get('Stop', [])
+kept = [e for e in stop if not any('team-memory-mcp' in h.get('command', '') for h in e.get('hooks', []))]
+if len(kept) != len(stop):
+    if kept:
+        settings['hooks']['Stop'] = kept
+    else:
+        settings['hooks'].pop('Stop')
+    print('  Removed legacy Stop hook (replaced by SessionEnd)')
+
+# Absolute path: hooks must not depend on ~/bin being on Claude Code's PATH.
 new_hooks = {
-    'Stop':       [{'matcher': '', 'hooks': [{'type': 'command', 'command': 'team-memory-mcp --once session-end', 'timeout': 60}]}],
-    'PreCompact': [{'matcher': '', 'hooks': [{'type': 'command', 'command': 'team-memory-mcp --once precompact',  'timeout': 60}]}],
+    'SessionEnd': [{'matcher': '', 'hooks': [{'type': 'command', 'command': binary + ' --once session-end', 'timeout': 120}]}],
+    'PreCompact': [{'matcher': '', 'hooks': [{'type': 'command', 'command': binary + ' --once precompact',  'timeout': 120}]}],
 }
 for event, entries in new_hooks.items():
     existing = settings['hooks'].get(event, [])
@@ -185,11 +201,11 @@ CLAUDE_JSON="$HOME/.claude.json"
 # In service mode the server is always running; disable auto-start from Claude Code.
 # In claude-code mode, Claude Code auto-starts the process via the 'command' field.
 if [ "$RUN_CHOICE" = "1" ]; then
-  MCP_COMMAND="team-memory-mcp"
+  MCP_COMMAND="$BIN_DIR/$BINARY"
   MCP_ARGS='["--mcp", "--port", "7439"]'   # use 7439 so it doesn't conflict with service on 7438
   SERVICE_MODE=true
 else
-  MCP_COMMAND="team-memory-mcp"
+  MCP_COMMAND="$BIN_DIR/$BINARY"
   MCP_ARGS='["--mcp"]'
   SERVICE_MODE=false
 fi
@@ -207,7 +223,8 @@ if 'team-memory' not in data['mcpServers']:
     data['mcpServers']['team-memory'] = {'command': command, 'args': args}
     print('  MCP server registered')
 else:
-    # Update args in case port changed
+    # Update command/args in case the install path or port changed
+    data['mcpServers']['team-memory']['command'] = command
     data['mcpServers']['team-memory']['args'] = args
     print('  MCP server updated')
 
@@ -253,6 +270,17 @@ echo "  Commands: $COMMANDS_DIR  (memory-search, memory-add)"
 # ── service setup ─────────────────────────────────────────────────────────────
 PORT=7438
 
+# launchd/systemd start services with a minimal PATH (/usr/bin:/bin:…), so the
+# `claude` CLI used for categorisation would be missing. Bake in its directory.
+SERVICE_PATH="$BIN_DIR:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+CLAUDE_BIN=$(command -v claude 2>/dev/null || true)
+if [ -n "$CLAUDE_BIN" ]; then
+  SERVICE_PATH="$(dirname "$CLAUDE_BIN"):$SERVICE_PATH"
+elif [ "$RUN_CHOICE" = "1" ]; then
+  echo "  Warning: 'claude' CLI not found on PATH — AI categorisation will be unavailable"
+  echo "  until it is installed and this installer is re-run."
+fi
+
 if [ "$RUN_CHOICE" = "1" ]; then
   # ── add hosts entry ──────────────────────────────────────────────────────
   if ! grep -qF 'team-mem' /etc/hosts 2>/dev/null; then
@@ -292,6 +320,7 @@ ExecStart=$BIN_DIR/$BINARY --port $PORT
 Restart=on-failure
 RestartSec=5s
 Environment=HOME=$HOME
+Environment=PATH=$SERVICE_PATH
 
 [Install]
 WantedBy=default.target
@@ -320,6 +349,11 @@ EOF
     <string>--port</string>
     <string>$PORT</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>$SERVICE_PATH</string>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -332,8 +366,13 @@ EOF
 </plist>
 EOF
     # Unload existing if present, then load
-    launchctl unload "$PLIST" 2>/dev/null || true
-    launchctl load -w "$PLIST"
+    DOMAIN="gui/$(id -u)"
+    launchctl bootout "$DOMAIN/com.team-memory.mcp" 2>/dev/null || true
+    if ! launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null; then
+      # Older macOS / non-GUI session fallback
+      launchctl unload "$PLIST" 2>/dev/null || true
+      launchctl load -w "$PLIST"
+    fi
     echo "  launchd agent loaded"
     echo "  Manage: launchctl list | grep team-memory"
     echo "  Log:    tail -f $LOG_DIR/mcp.log"
@@ -347,7 +386,7 @@ echo "✓ team-memory-mcp installed"
 echo ""
 echo "  Binary:  $BIN_DIR/$BINARY"
 echo "  Config:  ${XDG_CONFIG_HOME:-$HOME/.config}/team-memory/config.json"
-echo "  Hooks:   $HOME/.claude/settings.json  (Stop, PreCompact)"
+echo "  Hooks:   $HOME/.claude/settings.json  (SessionEnd, PreCompact)"
 echo "  MCP:     $HOME/.claude.json           (team-memory server)"
 echo ""
 if [ "$RUN_CHOICE" = "1" ]; then

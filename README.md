@@ -50,7 +50,7 @@ curl -LsSf https://raw.githubusercontent.com/AndrewSkea/team-memory/master/insta
 irm https://raw.githubusercontent.com/AndrewSkea/team-memory/master/install.ps1 | iex
 ```
 
-The installer downloads the binary, adds it to `~/bin` (or `%USERPROFILE%\bin` on Windows), prompts for your GitHub PAT and memory repo, wires `Stop`/`PreCompact` hooks into `~/.claude/settings.json`, and registers the MCP server in `~/.claude.json`. Config is written with mode `600` on Unix.
+The installer downloads the binary, adds it to `~/bin` (or `%USERPROFILE%\bin` on Windows), prompts for your GitHub PAT and memory repo, wires `SessionEnd`/`PreCompact` hooks into `~/.claude/settings.json`, and registers the MCP server in `~/.claude.json`. Config is written with mode `600` on Unix.
 
 > **Prerequisites:** a GitHub repo and a fine-grained PAT with `contents:write` on that repo.
 >

@@ -133,7 +133,7 @@ func runOnce(ctx context.Context, cfg config.Config, transcript []Message, sourc
 }
 
 func RunSessionEnd(ctx context.Context, cfg config.Config, transcript []Message, runner Runner, gh GitHubClient) error {
-	return runOnce(ctx, cfg, transcript, "Stop", runner, gh)
+	return runOnce(ctx, cfg, transcript, "SessionEnd", runner, gh)
 }
 
 func RunPreCompact(ctx context.Context, cfg config.Config, transcript []Message, runner Runner, gh GitHubClient) error {

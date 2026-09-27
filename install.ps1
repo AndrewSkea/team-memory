@@ -132,9 +132,21 @@ with open(path, encoding='utf-8') as f:
     settings = json.load(f)
 
 settings.setdefault('hooks', {})
+
+# Older installs hooked `Stop`, which fires after every assistant turn rather
+# than once per session. Remove those entries; SessionEnd replaces them.
+stop = settings['hooks'].get('Stop', [])
+kept = [e for e in stop if not any('team-memory-mcp' in h.get('command', '') for h in e.get('hooks', []))]
+if len(kept) != len(stop):
+    if kept:
+        settings['hooks']['Stop'] = kept
+    else:
+        settings['hooks'].pop('Stop')
+    print('  Removed legacy Stop hook (replaced by SessionEnd)')
+
 new_hooks = {
-    'Stop':       [{'matcher': '', 'hooks': [{'type': 'command', 'command': 'team-memory-mcp --once session-end', 'timeout': 60}]}],
-    'PreCompact': [{'matcher': '', 'hooks': [{'type': 'command', 'command': 'team-memory-mcp --once precompact',  'timeout': 60}]}],
+    'SessionEnd': [{'matcher': '', 'hooks': [{'type': 'command', 'command': 'team-memory-mcp --once session-end', 'timeout': 120}]}],
+    'PreCompact': [{'matcher': '', 'hooks': [{'type': 'command', 'command': 'team-memory-mcp --once precompact',  'timeout': 120}]}],
 }
 for event, entries in new_hooks.items():
     existing = settings['hooks'].get(event, [])
@@ -305,7 +317,7 @@ Parse the response JSON and report the `file` field (e.g. "Saved to DECISIONS.md
 )
 
 Write-Host "  Commands: $CommandsDir  (memory-search, memory-add)"
-Write-Host "  Hooks:   $env:USERPROFILE\.claude\settings.json  (Stop, PreCompact)"
+Write-Host "  Hooks:   $env:USERPROFILE\.claude\settings.json  (SessionEnd, PreCompact)"
 Write-Host "  MCP:     $env:USERPROFILE\.claude.json           (team-memory server)"
 Write-Host "  Web UI:  $WebUrl"
 Write-Host ""

@@ -119,7 +119,7 @@ async function fetchAndCache(gh, cache, path) {
 }
 
 function renderResults(config, fileHits, entryHits) {
-  const url = (p, line) => `https://github.com/${config.owner}/${config.repo}/blob/master/${p}${line ? `#L${line + 1}` : ""}`;
+  const url = (p, line) => `https://github.com/${config.owner}/${config.repo}/blob/HEAD/${p}${line ? `#L${line + 1}` : ""}`;
 
   const fileItems = fileHits.map(e =>
     `<li><a href="${escapeHtml(url(e.path))}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.path)}</a> <span style="color:var(--muted);font-size:12px;">${escapeHtml(e.topics)}</span></li>`

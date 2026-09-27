@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 type Config struct {
@@ -24,9 +25,36 @@ func IsMissing(err error) bool {
 	return errors.As(err, &m)
 }
 
+// DefaultPath returns the CLI config location. It must match where
+// install.sh / install.ps1 write the file:
+//   - Windows: %APPDATA%\team-memory\config.json (os.UserConfigDir)
+//   - macOS/Linux: $XDG_CONFIG_HOME/team-memory/config.json, else ~/.config/…
+//
+// os.UserConfigDir alone is wrong on macOS (~/Library/Application Support),
+// which is where older builds looked; that location is still honoured as a
+// fallback if it exists and the ~/.config file does not.
 func DefaultPath() string {
-	dir, _ := os.UserConfigDir()
-	return filepath.Join(dir, "team-memory", "config.json")
+	if runtime.GOOS == "windows" {
+		dir, _ := os.UserConfigDir()
+		return filepath.Join(dir, "team-memory", "config.json")
+	}
+	dir := os.Getenv("XDG_CONFIG_HOME")
+	if dir == "" {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, ".config")
+	}
+	path := filepath.Join(dir, "team-memory", "config.json")
+	if runtime.GOOS == "darwin" {
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			if legacy, _ := os.UserConfigDir(); legacy != "" {
+				lp := filepath.Join(legacy, "team-memory", "config.json")
+				if _, err := os.Stat(lp); err == nil {
+					return lp
+				}
+			}
+		}
+	}
+	return path
 }
 
 func Read(path string) (Config, error) {

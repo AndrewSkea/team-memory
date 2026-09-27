@@ -30,7 +30,7 @@ export function renderSetup(root, { onDone, config }) {
         <p class="muted" style="margin-top:12px;">Then add to <code>~/.claude/settings.json</code>:</p>
         <pre style="background:var(--bg);padding:8px;border-radius:4px;font-size:12px;overflow-x:auto;">{
   "hooks": {
-    "Stop": [{"matcher":"","hooks":[{"type":"command","command":"team-memory-mcp --once session-end"}]}],
+    "SessionEnd": [{"matcher":"","hooks":[{"type":"command","command":"team-memory-mcp --once session-end"}]}],
     "PreCompact": [{"matcher":"","hooks":[{"type":"command","command":"team-memory-mcp --once precompact"}]}]
   }
 }</pre>
@@ -76,9 +76,9 @@ export function renderSetup(root, { onDone, config }) {
   }
 
   $("#check-first").onchange = () => {
-    const stored = JSON.parse(localStorage.getItem("team-memory-config") ?? "{}");
+    const stored = JSON.parse(localStorage.getItem("team-memory:config") ?? "{}");
     stored.check_first = $("#check-first").checked;
-    localStorage.setItem("team-memory-config", JSON.stringify(stored));
+    localStorage.setItem("team-memory:config", JSON.stringify(stored));
   };
 
   $("#export-cfg").onclick = async () => {
